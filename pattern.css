@@ -236,6 +236,10 @@ body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
 }
 .sel-label span { font-weight: 400; color: #A0A0A0; }
 .sel-frame { fill: none; stroke: #FFFFFF; stroke-width: calc(2px / var(--zk, 1)); pointer-events: none; }
+.sel-frame.al-warn { stroke: var(--warn); stroke-width: calc(3px / var(--zk, 1)); }   /* 10.29 选中的这张就是点中的告警对象：框用那条告警的状态色 */
+.sel-frame.al-crit { stroke: var(--alert); stroke-width: calc(3px / var(--zk, 1)); }
+.sel-frame.al-thick { stroke-width: calc(3px / var(--zk, 1)); }   /* 超容红的卡被定位：白框加粗（红框混在一片超容红里认不出） */
+.p-npu.is-sel { cursor: zoom-in; }   /* 选中的那颗再点 = 放大到它的 POD；已放大 / 板视图里再点 = 进 NPU 页（10.29） */
 .sel-lead { position: fixed; z-index: 5; pointer-events: none; overflow: visible; }
 .sel-lead line { stroke: #FFFFFF; stroke-width: 1; }
 .sel-label.is-hidden, .sel-lead.is-hidden { display: none; }
@@ -274,15 +278,21 @@ svg.lod1 .lod1, svg.lod2 .lod2 { display: inline; }
 .p-colhd text { font-size: 2.6px; fill: #8A8A8A; letter-spacing: .02em; }
 .p-npunum { font-size: 1.5px; fill: #E8E8E8; pointer-events: none; }
 .p-npu.c2 + .p-npunum { fill: #111111; }
-.p-npu.is-dim + .p-npunum { opacity: .3; }
+.p-npu.is-dim + .p-npunum { opacity: calc(var(--recede) + .1); }   /* rank 号字细，比图形多留一档 */
 .p-npu.is-sel + .p-npunum { fill: #FFFFFF; font-weight: 500; }
 .p-roce { stroke: #8A8A8A; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 3 3; }
 .p-rocelabel { font-size: 8px; fill: #A0A0A0; }
 
 /* rank 格：正方形宫格，灰度 = 占用率；选中 = 纯白边框（不改它自己的灰度）；
    通信组成员保持原灰度、其余压暗，组别靠描边线型分 */
+/* 10.29 压暗统一一档 --recede = .3（反馈「这种隐去的部分太隐秘了」→ 看过之后「点击之后其他隐去的透明度再降一些，包括其他板子上的内容」：
+   要的是画面干净——选中那一块清楚，其余一律同一档退下去，而不是有的看不见、有的又满亮）。原来格子 .22、封装图标 / 占用条 .25、rank 号 .3，
+   展开关系时同 POD 其余板行再盖一层 97% 的底（叠起来 1–3%），而别的板上的 CPU / DPU / NIC 根本不跟着退——乱的是这个落差。
+   现在格子、封装图标、占用条、rank 号（+.1）、板视图图标、别的板上的 CPU / DPU / NIC（syncDimCtx 的动态样式）、Hierarchy 面板都读这一个值；
+   有压暗时展开关系的底撤掉（同一档已经由各自的 class 退下去，再盖一层就是两档）；2.5D / 3D 同档（engine/hw3d.js RECEDE，往托盘色褪） */
+:root { --recede: .3; }
 .p-npu { cursor: pointer; transition: opacity .15s ease; }
-.p-npu.is-dim { opacity: .22; }
+.p-npu.is-dim { opacity: var(--recede); }
 .p-npu.is-sel { stroke: none; }
 /* 选中 rank 的五个通信组：集群这一屏最关键的要素——组员落在物理图的哪里——按维度色描边（与矩阵本体同一套色） */
 .p-npu.g-tp { stroke: var(--c-tp); stroke-width: calc(1.2px / var(--zk, 1)); }
@@ -420,9 +430,9 @@ svg.lod2 .p-npu.is-sel { fill-opacity: 0; }
 svg.lod2 .p-npunum { fill: #A0A0A0; }
 svg.lod2 .p-npu.c2 + .p-npunum { fill: #A0A0A0; }
 svg.lod2 .p-npu.is-sel + .p-npunum { fill: #FFFFFF; }
-.p-npu.is-dim + .p-npunum + .p-npupkg, .p-npu.is-dim + .p-npunum + .p-npupkg + .p-npustrip { opacity: .25; }
+.p-npu.is-dim + .p-npunum + .p-npupkg, .p-npu.is-dim + .p-npunum + .p-npupkg + .p-npustrip { opacity: var(--recede); }
 .p-bnpu { fill-opacity: 0; stroke: none; }
-.p-bnpu.is-dim + .b-npuicon, .p-bnpu.is-dim + .b-npuicon + .b-npustrip { opacity: .3; }
+.p-bnpu.is-dim + .b-npuicon, .p-bnpu.is-dim + .b-npuicon + .b-npustrip { opacity: var(--recede); }
 .b-npul { fill: #E8E8E8 !important; }
 .b-npur { fill: #A0A0A0 !important; }
 .b-cpu rect, .b-dpu rect, .b-nic rect, .b-l1 rect, .b-nsw rect, .b-swb rect { fill: transparent; stroke: none; }
@@ -507,6 +517,18 @@ body.ann-norel .rel { display: none !important; }
 .hv-cg { display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; }
 .hv-cg i { display: block; aspect-ratio: 1; background: #3A3A3A; }
 .hv-cg i:nth-child(2n) { background: #5C5C5C; }
+/* 10.29 层间联动（反馈「上下之间的高亮联动保留，现在没有了也不能选」）：同画布——当前对象白框、它的上级浅灰框（同「连带选中」#A8A8A8）、
+   悬停提亮一档（不是框）、与当前无关的退后一档。胶囊的底色仍归 10.16 那条全局规则（深底），框用内阴影画，不去抢 border 的 !important；
+   「SuperPoD 0」在四颗一行时不再折成两行 */
+.hv .hv-chip { white-space: nowrap; padding: 2px 4px; transition: opacity .15s; }
+.hv .hv-chip.is-on { box-shadow: inset 0 0 0 1.5px #FFFFFF; }
+.hv .hv-chip.is-up { box-shadow: inset 0 0 0 1px #A8A8A8; color: #E8E8E8; }
+.hv .hv-chip.is-hov { background: rgba(255, 255, 255, .1); color: #FFFFFF; }
+.hv .hv-chip.is-dim:not(.is-hov) { opacity: var(--recede); }
+.hv .hv-bar.is-up { border-color: #A8A8A8; color: #E8E8E8; }
+.hv-row[data-hin] .hv-dies, .hv-row[data-hin] .hv-cg { opacity: var(--recede); transition: opacity .15s; }
+.hv-row[data-hin].is-rel .hv-dies, .hv-row[data-hin].is-rel .hv-cg { opacity: 1; }
+.hv-row[data-hin].is-rel .hv-die:not(.is-io) { border-color: #A8A8A8; color: #E8E8E8; }
 /* 单卡层工具条只留「配置」（机位 / 通信连线作用在这一屏），缩放与参考面板不适用 */
 body.t3 .dock [data-drawer], body.t3 .dock .dock-sep { display: none; }
 body.t3 .dock .dock-sep:first-of-type { display: block; }   /* 10.19：NPU 页也用这组缩放 / 复位（转给引擎），与 Network Graph 抽屉一样不再显示引擎自带的那条 HUD */
@@ -1230,7 +1252,7 @@ body:not(.is-compact) .dc-r { line-height: 16px; }
 .brief-cta.is-primary:hover { background: #FFFFFF; color: #000000; }
 /* NPU 图标 3× 起出现：从这一档起方块本身透明（占用灰度改由图标下的占用条表达），与 CPU / DPU / NIC 同一档 */
 svg.lod1 .p-npu:not(.is-sel), svg.lod1 .p-npu.is-sel { fill-opacity: 0; }
-svg.lod1 .p-npu.is-dim + .p-npunum + .p-npupkg { opacity: .25; }
+svg.lod1 .p-npu.is-dim + .p-npunum + .p-npupkg { opacity: var(--recede); }
 
 /* ── 10.10：板视图连线统一成直角走线 + 圆角（见 pattern.js rp）──
    共线的几根线叠在一条轨道上，半透明会越叠越亮、轨道一段亮一段暗；改用实色分档：
@@ -1288,7 +1310,9 @@ svg.has-sel .lkd { stroke-width: calc(1.3px / var(--zk, 1)); }
 .rel .lkc { stroke: #1F1F1F; stroke-width: calc(2.6px / var(--zk, 1)); stroke-linecap: butt; }
 .rel line, .rel path { stroke-width: calc(.7px / var(--zk, 1)); }
 .rel-cpu { stroke-width: calc(1px / var(--zk, 1)) !important; }
-.rel .rel-scrim { fill: #1F1F1F; fill-opacity: .97; stroke: none; }
+/* 10.29：其余板行的底从 97% 改成同 --recede 那一档：别的行和画面上其余退下去的东西一样淡，不再是几乎看不见。
+   有选中 / 聚焦时这层底撤掉——那时别的板上的 NPU、CPU / DPU / NIC 已经各自按 class / 动态样式退到这一档，再盖一层就成了两档 */
+.rel .rel-scrim { fill: #1F1F1F; fill-opacity: calc(1 - var(--recede)); stroke: none; }   /* 只是指针划过展开（没有选中）时：其余板行由这层底退到同一档；有选中 / 聚焦时由 syncDimCtx 撤掉 */
 
 /* ── 10.12：虚线全部改实线（反馈「虚线效果非常差，全部调整」）──
    虚线节奏在细线上只剩一串噪点，缩放时段长还跟着变。介质改用**灰度**区分，线型一律实线：
@@ -1327,6 +1351,16 @@ svg.has-sel .b-dlbl { fill: #6A6A6A; }
 .b-led { display: none; fill: #FAB219; pointer-events: none; }
 svg.st-ep .b-led { display: inline; }
 svg.st-ep .b-fan.is-hot, svg.st-ep .rel-clos.is-hot { stroke: #FAB219 !important; }
+/* 10.29 点告警定位到的对象 = 这条告警的状态色（反馈「这里点击告警的高亮不明显，这种可以用状体色」）：physApplySelection 给那一段 / 那张卡
+   挂 al-warn（告警琥珀 --warn）/ al-crit（超容红 --alert）。远看格子整格填状态色；出了封装图标（格子透明）后状态条换状态色、格子垫一层 22% 同色
+   （同图元库状态态的整件 22% 混色，数字照样读得清）；板视图状态条 + 图标外一圈同色细框。不受「占用」标注开关影响；聚焦撤了就回去 */
+.p-npu.al-warn, body.ann-noocc .p-npu.al-warn { fill: var(--warn) !important; }
+.p-npu.al-crit, body.ann-noocc .p-npu.al-crit { fill: var(--alert) !important; }
+svg.lod1 .p-npu:not(.p-bnpu).al-warn, svg.lod1 .p-npu:not(.p-bnpu).al-crit { fill-opacity: .22; }
+.p-npu.al-warn + .p-npunum + .p-npupkg + .p-npustrip, .p-bnpu.al-warn + .b-npuicon + .b-npustrip { fill: var(--warn) !important; }
+.p-npu.al-crit + .p-npunum + .p-npupkg + .p-npustrip, .p-bnpu.al-crit + .b-npuicon + .b-npustrip { fill: var(--alert) !important; }
+.p-bnpu.al-warn ~ .b-relf { display: inline; stroke: var(--warn); }
+.p-bnpu.al-crit ~ .b-relf { display: inline; stroke: var(--alert); }
 
 /* ── 10.15：颜色只表示状态，线型区分介质；选中 / 连带选中分开（反馈「为什么还有蓝色的线」「用颜色表示状态，线型就用线的样式区分」
    「注意选中状态和连带选中的状态」）──

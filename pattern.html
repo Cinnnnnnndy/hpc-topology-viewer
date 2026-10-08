@@ -22,14 +22,14 @@
 
   故事线（反馈「按下钻的逻辑把整个视图串起来，而不是视图 tab 切换」）：
   · 集群 —— 灵衢物理拓扑（physStage，内联 SVG）：4 个超节点各自的 8 个 L2
-    平面（4×SW2，按平面着色）、8 个 128 卡组（8 颗 L1 SW + 2 个 64 卡 POD）、
-    POD 里 8 块板（每板 2 CPU + 8 NPU + DPU + 4 NIC），超节点之间 UBoE。NPU
-    默认全白、超容标红。滚轮缩放、拖拽平移；点 POD 取景过去，再点一行进板。
+    平面（4×SW2，按平面着色）、8 个 128 卡组（8 颗 L1 SW + 2 个 64 卡机柜 Rack）、
+    机柜里 8 块板（每板 2 CPU + 8 NPU + DPU + 4 NIC），超节点之间 UBoE。NPU
+    默认全白、超容标红。滚轮缩放、拖拽平移；点机柜取景过去，再点一行进板。
   · 板 —— 板视图（boardStage）：一块板的 Server 形态，直播四页里的关系一处
     不落：CPU0—CPU1 互联、DPU —PCIe— CPU、CPU/DPU —UB→ L1、H2D（CPU 各带
     4 卡，UB 2 口）、NIC 各挂相邻 2 卡（UB 1 口）并 RoCE 出到参数面、板内 8 卡
     UB fullmesh（7×X4）、出板 Clos 每卡 8 口扇到 8 颗 L1（每平面一颗）、L1 4 口
-    到本平面 4×SW2（平面间无互联）、L2 —UB→ 其他 POD、超节点之间 UBoE。
+    到本平面 4×SW2（平面间无互联）、L2 —UB→ 其他机柜、超节点之间 UBoE。
   · 段视图（径向星图）已归档：/patterns/pp-segment-radial/（归档分支）。
     从左卡的段按钮或右卡「看它所在的段」进来。
   · 卡 —— 任一层点一颗 NPU/叶子 = 选中 rank：右卡先摆坐标行，再借矩阵本体
@@ -49,14 +49,14 @@
   一边、把画布挤过去，不悬浮在画布上。
 
   落位是假设：配置里没有 rank→NPU 的映射，这一层按「rank 连续摆放」推
-  （r → 超节点 ⌊r/1024⌋ · POD ⌊r/64⌋ · 板 ⌊r/8⌋），左卡与右卡都写明；切分、
+  （r → 超节点 ⌊r/1024⌋ · 机柜 ⌊r/64⌋ · 板 ⌊r/8⌋），左卡与右卡都写明；切分、
   通信组成员、各组跨到哪一级链路都是从配置和公式算出来的，不是编的。
 
   world ≤ 64（只有 ?preset=dense64）：直接铺满矩阵本体原页，没有这套链——
   规模小到不必再包一层。 -->
 </head>
 <body>
-  <div id="physStage" class="stage-frame is-hidden phys-stage" role="img" aria-label="灵衢物理拓扑：SuperPoD / L2 平面 / L1 SW / POD / Board（NPU·CPU·DPU·NIC）"></div>
+  <div id="physStage" class="stage-frame is-hidden phys-stage" role="img" aria-label="灵衢物理拓扑：SuperPoD / L2 平面 / L1 SW / Rack（机柜）/ Board（NPU·CPU·DPU·NIC）"></div>
   <div id="boardStage" class="stage-frame is-hidden phys-stage board-stage" role="img" aria-label="板视图：一块板的 Server 形态——2 CPU · 8 NPU · DPU · 4 NIC，板内 UB fullmesh，出板 8 口到 8 颗 L1，L1 到各自平面的 4×SW2"></div>
   <iframe id="matrixFrame" class="stage-frame is-hidden" title="矩阵引擎 · 借来算数（brief=1），不显示"></iframe>
   <iframe id="detailFrame" class="stage-frame is-hidden" title="矩阵引擎 · NPU 详情（选中即预载）"></iframe>

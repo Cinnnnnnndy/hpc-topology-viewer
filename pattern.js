@@ -495,7 +495,7 @@
     return g;
   }
   /* 10.17 术语：SuperPoD 一律 SuperPoD——「SP」在 Network Graph 里是序列并行（Sequence Parallel），同一个缩写不能指两件事 */
-  var LINK_LEVELS = ['Board', 'POD', 'SuperPoD', 'Cross-SuperPoD'];
+  var LINK_LEVELS = ['Board', 'Rack', 'SuperPoD', 'Cross-SuperPoD'];   // 10.29 第二级界面上叫 Rack（机柜，8 块 Board · 64 NPU）：原来写 POD，业内 POD 指更大的一组机柜（反馈「这个是一个板吗还是一个机柜呀」）；代码里的变量仍叫 pod
   /* 8 个平面（直播第一页：L1/L2 按平面成 Clos，平面之间没有互联）只用 P1…P8 的
      标签区分，不按平面着色——黑白规则。PLANE_C 留着做统一灰阶入口。 */
   var PLANE_C = ['#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E'];
@@ -640,18 +640,22 @@
     q('.p-npu').forEach(function (e) { L.npu[+e.getAttribute('data-rank')] = R(e); });
     return L;
   }
-  /* 每颗 NPU 一个字节：bit0-1 选中态（0 常态 / 1 压暗 / 2 选中 / 3 组员）、bit2 超容、bit3-4 占用档——
+  /* 每颗 NPU 一个字节：bit0-1 选中态（0 常态 / 1 压暗 / 2 选中 / 3 组员）、bit2 超容、bit3-4 占用档、
+     bit5-6 告警定位的状态色（0 无 / 1 告警琥珀 al-warn / 2 超容红 al-crit，10.29：点告警时那一段 / 那张卡，引擎里整件换状态色）——
      直接读平面图那颗格子此刻的 class（physApplySelection / applyAlerts 刚写好的），两边永远同一个状态 */
   function hwCodes() {
     var c = new Uint8Array(world);
     physStage.querySelectorAll('.p-npu').forEach(function (el) {
       var cl = el.classList, r = +el.getAttribute('data-rank'), v = cl.contains('is-sel') ? 2 : cl.contains('is-dim') ? 1 : /\bg-/.test(el.getAttribute('class')) ? 3 : 0;
       if (cl.contains('c3')) v |= 4; else v |= (cl.contains('c2') ? 2 : cl.contains('c1') ? 1 : 0) << 3;
+      v |= (cl.contains('al-crit') ? 2 : cl.contains('al-warn') ? 1 : 0) << 5;
       c[r] = v;
     });
     return c;
   }
   function hwSync(instant) {
+    // 取景的 SuperPoD 只在它还罩得住当前对象时有效：选中 / 取景到别处（点卡、点 POD、告警定位）就作废，退出时不再飞回一个早就离开的 SuperPoD
+    if (hierSP != null && ((curSel != null && physOf(curSel).sp !== hierSP) || (fitPod != null && Math.floor(fitPod * PHYS.pod / PHYS.sp) !== hierSP))) hierSP = null;
     if (!hwOn()) return;
     if (!HW.loaded) { HW.loaded = true; hwFrame.src = './engine/hw3d.html' + (qs.get('fps') === '1' ? '?fps=1' : ''); return; }   // ?fps=1 透传：引擎角上显示实时帧率   // 引擎起来发 hw:ready，再同步
     if (!HW.ready || !physBuilt) return;
@@ -659,9 +663,9 @@
     if (HW.layoutFor !== physBuilt + '|' + world) { var L9 = hwLayout(); if (!L9) return; HW.layoutFor = physBuilt + '|' + world; try { w9.postMessage({ type: 'hw:layout', layout: L9 }, '*'); } catch (e) {} }
     var R9 = { width: window.innerWidth, height: window.innerHeight }, sa = safeArea(R9);
     var bEl = level === 'board' && curBoard != null ? physStage.querySelector('.p-board[data-board="' + curBoard + '"]') : null;
-    var pEl = fitPod != null ? physStage.querySelector('.p-pod[data-pod="' + fitPod + '"]') : null;
+    var pEl = fitPod != null ? physStage.querySelector('.p-pod[data-pod="' + fitPod + '"]') : hierSP != null && (curSel == null || physOf(curSel).sp === hierSP) ? physStage.querySelector('.p-sp[data-sp="' + hierSP + '"]') : null;   // 10.29：Hierarchy 点了 SuperPoD，立体也取景到它（不然镜头回整个集群、面板却亮着那一颗）
     var rr = function (el) { return [+el.getAttribute('x'), +el.getAttribute('y'), +el.getAttribute('width'), +el.getAttribute('height')]; };
-    var st = { mode: CV, npu: hwCodes(), rank: curSel, board: level === 'board' ? curBoard : null, pod: fitPod != null ? fitPod : null,
+    var st = { mode: CV, npu: hwCodes(), dim: DIMCTX, rank: curSel, board: level === 'board' ? curBoard : null, pod: fitPod != null ? fitPod : null,
       focus: bEl ? rr(bEl) : pEl ? rr(pEl) : null, inset: { l: sa.x, t: sa.y, r: R9.width - sa.x - sa.w, b: R9.height - sa.y - sa.h }, instant: !!instant };
     try { w9.postMessage({ type: 'hw:set', state: st }, '*'); } catch (e) {}
   }
@@ -678,17 +682,20 @@
     if (d.type === 'hw:ready') { HW.ready = true; HW.layoutFor = null; hwSync(true); }
     else if (d.type === 'hw:pick') hwPick(d);
   });
-  /* 引擎里的点选 = 平面图里的同一次点选（见 physStage 的 click）：点格子选 rank、再点已选中的那格放大到它的 POD；
-     点 POD 取景；POD 已取景时点它的某一块板 = 进板；点空白先取消选中，再退出 POD / 板 */
+  /* 引擎里的点选 = 平面图里的同一次点选（见 physStage 的 click）：点格子选 rank、再点已选中的那格放大到它的 POD，已取景到它的 POD / 在它那块板上再点 = 进 NPU 页；
+     点 POD 取景；POD 已取景时点它的某一块板 = 进板；点空白一层层往外退：取消选中 → 退出板 → 退出 POD → 退出 SuperPoD */
   function hwPick(d) {
     var podOf = function (b) { return Math.floor(b * PHYS.board / PHYS.pod); };
-    if (d.kind === 'rank') { if (d.rank === curSel) { fitPod = physOf(d.rank).pod; renderDataCards(); hwSync(); } else showTier2(d.rank, coordLine(d.rank)); }
+    // 10.29 已取景到它的 POD / 在它那块板上时，再点选中的那颗 = 进 NPU 页（同平面图）
+    if (d.kind === 'rank') { var q9 = physOf(d.rank);
+      if (d.rank !== curSel) showTier2(d.rank, coordLine(d.rank)); else if (fitPod === q9.pod || (level === 'board' && curBoard === q9.board)) showDetail(d.rank); else { fitPod = q9.pod; renderDataCards(); hwSync(); } }
     else if (d.kind === 'board') { if (level === 'board' || fitPod === podOf(d.board)) goBoard(d.board, true); else { fitPod = podOf(d.board); renderDataCards(); hwSync(); } }
     else if (d.kind === 'pod') { if (level === 'board') { level = 'cluster'; showTier1Visual(); renderCrumb(); } fitPod = d.pod; renderDataCards(); hwSync(); }
     else if (d.kind === 'none') {
       if (curSel != null) showOverview(true);
       else if (level === 'board') { level = 'cluster'; showTier1Visual(); renderLeftCard(); renderCrumb(); }
       else if (fitPod != null) { fitPod = null; renderDataCards(); hwSync(); }
+      else if (hierSP != null) { hierSP = null; renderDataCards(); hwSync(); }   // 10.29 再退一层：取景的 SuperPoD（Hierarchy / 画布超节点框）→ 整个集群，同平面图点空白
     }
   }
   function buildPhysSvg() {
@@ -724,7 +731,7 @@
         for (var k = 0; k < 8; k++) {
           var swx = gx + k * (sw1w + 4);
           (GEO.sw1[gBase / PHYS.group] = GEO.sw1[gBase / PHYS.group] || [])[k] = { x: swx + sw1w / 2, top: gy, bot: gy + SW1H };
-          panels.push('<rect class="p-sw1" style="--pc:' + PLANE_C[k] + '" x="' + swx + '" y="' + gy + '" width="' + sw1w + '" height="' + SW1H + '"><title>L1 SW · 平面 ' + (k + 1) + ' · 下接 2 个 POD 每颗 NPU 1 口 · 上接本平面 4×SW2（4 口）</title></rect>');
+          panels.push('<rect class="p-sw1" style="--pc:' + PLANE_C[k] + '" x="' + swx + '" y="' + gy + '" width="' + sw1w + '" height="' + SW1H + '"><title>L1 SW · 平面 ' + (k + 1) + ' · 下接 2 个 Rack 每颗 NPU 1 口 · 上接本平面 4×SW2（4 口）</title></rect>');
           panels.push('<use class="p-swicon" href="#hw-sw" x="' + (swx + 1) + '" y="' + (gy + 1) + '" width="' + (sw1w - 2) + '" height="' + (SW1H - 2) + '"/>');
           l2s.push({ g: g, k: k, x: swx + sw1w / 2, top: gy, col: g % GRPCOLS, row: Math.floor(g / GRPCOLS) });
         }
@@ -733,7 +740,7 @@
           var pBase = gBase + pd * PHYS.pod; if (pBase >= world) break;
           var pdx = gx + pd * (PODW + GAPP), pdy = gy + SW1H + 8, podIdx = Math.floor(pBase / PHYS.pod);
           panels.push('<rect class="p-pod" data-pod="' + podIdx + '" data-sp="' + s + '" x="' + pdx + '" y="' + pdy + '" width="' + PODW + '" height="' + PODH + '">'
-            + '<title>POD ' + podIdx + ' · 8 板 · 64 NPU · 16 CPU · 每板 1 DPU · 4 NIC · 点一下取景，再点某一行进那块板</title></rect>');
+            + '<title>Rack ' + podIdx + ' · 机柜 · 8 Board · 64 NPU · 16 CPU · 每板 1 DPU · 4 NIC · 点一下取景，再点某一行进那块板</title></rect>');
           // 上联：CPU 列、NPU 列、DPU 列各一条 UB 到 L1 SW；NIC 列一条 RoCE 穿过 SW1 行出去
           [pdx + 11, pdx + 58, pdx + 101].forEach(function (ux) {
             links.push('<line class="p-l1" x1="' + ux + '" y1="' + (gy + SW1H) + '" x2="' + ux + '" y2="' + pdy + '"/>');
@@ -742,7 +749,7 @@
           if (g === 0 && pd === 0) panels.push('<text class="p-rocelabel" x="' + (pdx + 119) + '" y="' + (gy - 4) + '">RoCE</text>');
           panels.push('<g class="lod1 p-colhd">'
             + '<text x="' + (pdx + 10.5) + '" y="' + (pdy + 4.2) + '" text-anchor="middle">CPU</text>'
-            + '<text x="' + (pdx + 58) + '" y="' + (pdy + 4.2) + '" text-anchor="middle">NPU · POD ' + podIdx + '</text>'
+            + '<text x="' + (pdx + 58) + '" y="' + (pdy + 4.2) + '" text-anchor="middle">NPU · Rack ' + podIdx + '</text>'
             + '<text x="' + (pdx + 101) + '" y="' + (pdy + 4.2) + '" text-anchor="middle">DPU</text>'
             + '<text x="' + (pdx + 115) + '" y="' + (pdy + 4.2) + '" text-anchor="middle">NIC</text></g>');
           for (var b = 0; b < 8; b++) {
@@ -752,17 +759,18 @@
             /* 设备各有各的形：只有 NPU 是实心（填充 = 显存占用率这份数据），
                其余都是空心轮廓——CPU 方框、DPU 菱形、NIC 四根端口短竖线。 */
             // 图形直接用 硬件图元库 的 2D 图元（hw-icons.js 里的 <symbol>）：CPU 鲲鹏、DPU、NIC 擎天
-            panels.push('<use class="p-cpu" href="#hw-cpu" x="' + (pdx + 4.6) + '" y="' + (ry - 2.6) + '" width="6.2" height="5.2"/>'
-              + '<use class="p-cpu" href="#hw-cpu" x="' + (pdx + 11) + '" y="' + (ry - 2.6) + '" width="6.2" height="5.2"/>'
-              + '<use class="p-dpu" href="#hw-dpu" x="' + (pdx + 97.4) + '" y="' + (ry - 3) + '" width="8" height="6"/>');
-            for (var ni = 0; ni < 4; ni++) panels.push('<use class="p-nic" href="#hw-nic" x="' + (pdx + 107.2 + (ni % 2) * 6.8) + '" y="' + (ry - 3.4 + Math.floor(ni / 2) * 3.4) + '" width="6.4" height="3.2"/>');
+            // data-board：选中 / 聚焦时别的板上的 CPU / DPU / NIC 按板一起退到 --recede（见 syncDimCtx）
+            panels.push('<use class="p-cpu" data-board="' + bIdx + '" href="#hw-cpu" x="' + (pdx + 4.6) + '" y="' + (ry - 2.6) + '" width="6.2" height="5.2"/>'
+              + '<use class="p-cpu" data-board="' + bIdx + '" href="#hw-cpu" x="' + (pdx + 11) + '" y="' + (ry - 2.6) + '" width="6.2" height="5.2"/>'
+              + '<use class="p-dpu" data-board="' + bIdx + '" href="#hw-dpu" x="' + (pdx + 97.4) + '" y="' + (ry - 3) + '" width="8" height="6"/>');
+            for (var ni = 0; ni < 4; ni++) panels.push('<use class="p-nic" data-board="' + bIdx + '" href="#hw-nic" x="' + (pdx + 107.2 + (ni % 2) * 6.8) + '" y="' + (ry - 3.4 + Math.floor(ni / 2) * 3.4) + '" width="6.4" height="3.2"/>');
             if (b > 0) panels.push('<line class="p-bdiv lod1" x1="' + (pdx + 3) + '" y1="' + (ry - ROWP / 2) + '" x2="' + (pdx + PODW - 3) + '" y2="' + (ry - ROWP / 2) + '"/>');
             for (var n = 0; n < 8; n++) {
               var r = pBase + b * 8 + n; if (r >= world) break;
               var c = coordOfRank(r);
               nodes.push('<rect class="p-npu" data-rank="' + r + '" data-pp="' + c.pp + '" data-pod="' + podIdx + '"'
                 + ' x="' + (pdx + 22 + n * PITCH + 1) + '" y="' + (ry - 3.5) + '" width="7" height="7">'
-                + '<title>rank ' + r + ' · ' + coordLine(r) + ' · SuperPoD ' + s + ' · POD ' + podIdx + ' · Board ' + b + ' · Slot ' + n + '</title></rect>');
+                + '<title>rank ' + r + ' · ' + coordLine(r) + ' · SuperPoD ' + s + ' · Rack ' + podIdx + ' · Board ' + b + ' · Slot ' + n + '</title></rect>');
               // rank 号 / 封装图标 / 占用条这三件只在放大到 6× 以上才看得见：不在这里一次建 4096×3 个，见 ensurePodDetail
             }
           }
@@ -827,7 +835,8 @@
        每根线垫底色描边（lod2 才显出来）。束内间距 BQ、轨道层距 DQ（集群坐标，一格 NPU 宽 7） */
     var BQ = 0.5, DQ = 0.5, R9 = 0.8;   // 束内间距 = 轨道层距，全图同一个值（反馈「间距不一致」）
     /* 板行之间只有 2 格缝，线只能从别的行身上过：展开关系时这个 POD 的其余行让位——盖一层与 POD 同色的底（当前这一行挖空），
-       线画在干净的底上，不压任何器件、也不被任何器件盖住（反馈「连线遮挡」）。移开 / 取消选中就恢复 */
+       线画在压暗的底上、不被任何器件盖住（反馈「连线遮挡」）。移开 / 取消选中就恢复。
+       10.29 这层底不再盖死，压到 --recede 那一档（.3）；有选中 / 聚焦时撤掉——其余板上的器件已经各自退到这一档（syncDimCtx）。6× 起线靠各自的底色描边切开 */
     var PY = G.pdy, PH = 84, PW = PODW_, rr = 7, top0 = ry - ROWP_ / 2, bot0 = ry + ROWP_ / 2;
     out.push('<path class="rel-scrim" fill-rule="evenodd" d="M' + (x0 + rr) + ',' + PY + ' H' + (x0 + PW - rr) + ' Q' + (x0 + PW) + ',' + PY + ' ' + (x0 + PW) + ',' + (PY + rr)
       + ' V' + (PY + PH - rr) + ' Q' + (x0 + PW) + ',' + (PY + PH) + ' ' + (x0 + PW - rr) + ',' + (PY + PH) + ' H' + (x0 + rr) + ' Q' + x0 + ',' + (PY + PH) + ' ' + x0 + ',' + (PY + PH - rr)
@@ -911,9 +920,13 @@
   physStage.addEventListener('pointerover', function (ev) {
     var svgEl = physStage.querySelector('.zp-box svg');
     if (!svgEl || !svgEl.classList.contains('lod1')) return;
+    /* 选中了 rank 时展开的就是它所在的那块（见 relSvg 上面「选中了 rank 就是它所在的那块」），指针划过别的行不换：
+       换过去那块的让位底（rel-scrim）会把选中那一行整行盖住，白框孤零零浮在底上，看着像错位到了别的卡下面、压着连线
+       （反馈截图：POD 取景后选中框不在卡上）。再点选中格放大到 POD 时指针原地不动、底下换成了别的行，浏览器补发的 pointerover 就会触发这一下 */
     var t = ev.target.closest('.p-npu, .p-board');
     if (!t) return;
     var b = t.hasAttribute('data-board') ? +t.getAttribute('data-board') : physOf(+t.getAttribute('data-rank')).board;
+    if (curSel != null && Math.floor(b * PHYS.board / PHYS.pod) === physOf(curSel).pod) b = physOf(curSel).board;   // 只锁选中那张所在的 POD（指针在这里时展开的总是它那块，划出去再回来也换回它）；镜头挪到别的 POD 时照旧跟着指针
     showRelations(b);
   });
   /* 放大到 6×（lod2）才出现的逐卡细节（rank 号 / 封装图标 / 占用条）按 POD 懒建：只给画面里看得见的那几个 POD 建，
@@ -959,21 +972,39 @@
   }
   /* 选中/聚焦态：选中了 rank 就按五个通信组描边、其余压暗；只聚焦了 PP 段就
      把别的段压暗；都没有就全亮。同时把所在 POD / 超节点的框点亮。 */
+  /* 10.29 选中 / 聚焦时「其余」一起退（反馈「点击之后其他隐去的透明度再降一些，包括其他板子上的内容」）：原来只有 NPU 格子压暗，
+     别的板上的 CPU / DPU / NIC 满亮，一半淡一半亮显得乱。有压暗时写一条动态样式：除了选中那张所在的板，所有板上的 CPU / DPU / NIC 退到
+     --recede（聚焦一段 / 并行对象时没有「那一块」，全部退），并撤掉展开关系的底（各自已经退过一档）。一条样式、不逐个改 class，4096 卡也只是一次重算。
+     DIMCTX：null = 没有压暗；-1 = 全部退；≥0 = 留下这块板。2.5D / 3D 同一个口径（hwSync 带给引擎） */
+  var DIMCTX = null, dimCtxSheet = document.createElement('style'); document.head.appendChild(dimCtxSheet);
+  function syncDimCtx(v) {
+    DIMCTX = v;
+    var keep = v != null && v >= 0 ? ':not([data-board="' + v + '"])' : '';
+    var t = v == null ? '' : ['p-cpu', 'p-dpu', 'p-nic'].map(function (c) { return '#physStage .' + c + keep; }).join(', ') + ' { opacity: var(--recede); } #physStage .rel .rel-scrim { fill-opacity: 0; }';
+    if (dimCtxSheet.textContent !== t) dimCtxSheet.textContent = t;
+  }
   function physApplySelection() {
     if (!physBuilt) return;
     var g = curSel != null && ANN.grp ? commGroups(curSel) : null, cls = {};
     if (g) ['pp', 'dp', 'ep', 'cp', 'tp'].forEach(function (k) { g[k].forEach(function (r) { cls[r] = 'g-' + k; }); });
     if (curSel != null) cls[curSel] = 'is-sel';
     var here = curSel != null ? physOf(curSel) : null;
+    /* 点告警定位到的对象用这条告警的状态色（反馈「这里点击告警的高亮不明显，这种可以用状体色」）：告警琥珀 al-warn / 超容红 al-crit，
+       一段告警 = 这一段的卡、一张卡的告警 = 那张卡。只在这条告警还是「当前那条」时亮——聚焦撤了、换了段 / 选中 / 并行对象就失效 */
+    var AH = alertHi && (alertGoing || (alertHi.rank != null ? curSel === alertHi.rank : curSel == null && !OBJ.dim && focusPP === alertHi.pp)) ? alertHi : null;
+    if (alertHi && !AH) { alertHi = null; alertAt = -1; alertKey = null; renderJourney(); }   // 清单里那一行的 is-on 一起撤
     document.querySelectorAll('.phys-stage .p-npu').forEach(function (el) {
       var r = +el.getAttribute('data-rank'), extra;
       if (g) extra = cls[r] ? ' ' + cls[r] : ' is-dim';
       else if (curSel != null) extra = cls[r] ? ' ' + cls[r] : '';
       else if (OBJ.dim) extra = objVal(r, OBJ.dim) !== OBJ.idx ? ' is-dim' : '';
       else extra = focusPP != null && +el.getAttribute('data-pp') !== focusPP ? ' is-dim' : '';
+      /* 琥珀的告警不把一张超容（c3）的卡降成琥珀：那张卡自己的红更要紧，照旧按红画 */
+      if (AH && (AH.rank != null ? r === AH.rank : AH.pps ? AH.pps.indexOf(+el.getAttribute('data-pp')) >= 0 : +el.getAttribute('data-pp') === AH.pp)) extra += ' al-' + (AH.sev === 'warn' && capClass(r) === 'c3' ? 'crit' : AH.sev);
       var nc = 'p-npu' + (el.hasAttribute('data-slot') ? ' p-bnpu' : '') + extra + ' ' + capClass(r);
       if (el.getAttribute('class') !== nc) el.setAttribute('class', nc);
     });
+    syncDimCtx(g ? physOf(curSel).board : curSel == null && (OBJ.dim || focusPP != null) ? -1 : null);
     [physStage, boardStage].forEach(markSelFrame);
     if (curSel != null) { relBoard = null; showRelations(physOf(curSel).board); }   // 选中变了就重画：选中 / 连带选中的标记画在关系图里
     renderPanel();
@@ -1054,6 +1085,13 @@
   /* 集群层的点击：NPU = 选中（再点 = 下钻）；POD 第一下 = 取景过去，取景之后
      再点它里面的某一行 = 进那块板（板视图）；超节点 = 取景；空白 = 取消选中/复位。 */
   var fitPod = null;
+  /* 只记「取景的是哪个 POD」并把平面图镜头静默摆过去（板视图里换板时用：画面在板视图，退出时落在这个 POD；旧的回程镜头作废） */
+  function setFitPod(p) {
+    var el = physStage.querySelector('.p-pod[data-pod="' + p + '"]'); if (!el) return;
+    fitPod = p; trail = null;
+    physStage.querySelectorAll('.p-pod.is-fit').forEach(function (e9) { e9.classList.remove('is-fit'); }); el.classList.add('is-fit');
+    physZP.fitVB(+el.getAttribute('x'), +el.getAttribute('y'), +el.getAttribute('width'), +el.getAttribute('height'), 40, false);
+  }
   function zoomToPod(r) {
     var pod = physStage.querySelector('.p-pod[data-pod="' + physOf(r).pod + '"]'); if (!pod) return;
     fitPod = +pod.getAttribute('data-pod');
@@ -1062,11 +1100,14 @@
     physZP.fitVB(+pod.getAttribute('x'), +pod.getAttribute('y'), +pod.getAttribute('width'), +pod.getAttribute('height'), 40, true);
     renderDataCards();
   }
+  /* 10.29 已经放大到它的 POD（或滚轮推到 6× 看得见 rank 号）、封装图标看得清时，再点选中的那颗 = 进 NPU 页（反馈「怎么现在点不到下钻的场景了」）：
+     下面那条反馈说的是从总览双击直接跳走、没先放大——第一下照旧放大，放大以后画布上就没有别的可做，再点才下钻（同 Logical Cube「再点一次已经选中的那张方块 = 下钻」） */
+  function selNear(r) { var sv = physStage.querySelector('.zp-box svg'); return !!(sv && sv.classList.contains('lod1') && (fitPod === physOf(r).pod || sv.classList.contains('lod2'))); }
   physStage.addEventListener('click', function (ev) {
     var npu = ev.target.closest('.p-npu');
-    /* 再点一次（双击）已选中的格 = 放大到它所在的 POD，看得见封装图元；不再直接下钻单卡——
-       下钻只走右列「↓ 单卡」（反馈：双击之后跳到单卡那一屏「完全看不清」「这里为什么不放大了」） */
-    if (npu) { var r = +npu.getAttribute('data-rank'); if (r === curSel) zoomToPod(r); else showTier2(r, coordLine(r)); return; }
+    /* 再点已选中的格：还没放大时 = 放大到它所在的 POD，看得见封装图元（反馈：双击之后跳到单卡那一屏「完全看不清」「这里为什么不放大了」——
+       总览里一双击不直接跳走）；已取景到它的 POD / 6× 起看得见图标时再点 = 进 NPU 页（selNear，10.29）。左列 rank 卡的「↗ NPU」一直可用 */
+    if (npu) { var r = +npu.getAttribute('data-rank'); if (r !== curSel) showTier2(r, coordLine(r)); else if (selNear(r)) showDetail(r); else zoomToPod(r); return; }
     var row = ev.target.closest('.p-board');
     if (row && fitPod === +row.getAttribute('data-pod')) { goBoard(+row.getAttribute('data-board'), true); return; }
     var box = ev.target.closest('.p-pod, .p-sp');
@@ -1214,7 +1255,7 @@
     // CPU 行：DPU · NIC0 · CPU0 · NIC1 · NIC2 · CPU1 · NIC3 · SW
     var DP = box('b-dpu', 72, CPUY, 64, 22, 'DPU', 'DPU · PCIe 接 CPU0 · UB 上 L1 · RoCE 出框');
     links.push(cased('<line class="b-roce" x1="' + DP.x + '" y1="22" x2="' + DP.x + '" y2="' + DP.t + '"/>'));
-    var SW = box('b-nsw', 905, CPUY + 1, 48, 22, 'SW', 'NIC 交换（POD 形态：SW 挂 4×NIC，每 NIC 2 口；每颗 CPU 1 口）');
+    var SW = box('b-nsw', 905, CPUY + 1, 48, 22, 'SW', 'NIC 交换（Rack 形态：SW 挂 4×NIC，每 NIC 2 口；每颗 CPU 1 口）');
     /* 进 NIC 交换的 6 根（NIC0 · CPU0 · NIC1 · NIC2 · CPU1 · NIC3，按源从左到右编号）：各走一条轨道、在 SW 顶边各占一道——
        最左的源走最上面那条、落进最右一道，一根套一根，不再并成一条横线 */
     var NSI = { nic: [0, 2, 3, 5], cpu: [1, 4] };
@@ -1325,7 +1366,7 @@
     // 底部总线不加衬边：上面落下来的 8 根短线要在它身上汇成一排汇接点，衬边会把接点切掉
     links.push('<line class="b-ub b-bus" x1="60" y1="' + (L2Y + L2H + 22) + '" x2="' + (NX(3) + 40) + '" y2="' + (L2Y + L2H + 22) + '"/>'
       + '<line class="b-uboe b-bus" x1="' + (NX(4) - 40) + '" y1="' + (L2Y + L2H + 22) + '" x2="900" y2="' + (L2Y + L2H + 22) + '"/>');
-    txt.push('<text class="b-lbl b-lbl-ub" x="60" y="' + (L2Y + L2H + 36) + '">UB → POD</text>'
+    txt.push('<text class="b-lbl b-lbl-ub" x="60" y="' + (L2Y + L2H + 36) + '">UB → Rack</text>'
       + '<text class="b-lbl b-lbl-uboe" x="900" y="' + (L2Y + L2H + 36) + '" text-anchor="end">UBoE → SuperPoD</text>');
     /* 连线上的数据（10.13）：四个槽位，对应四级闭合——板内（fullmesh）· POD（出板 Clos）· SP（L2 UB 总线）· 跨 SP（UBoE 总线）。
        每个槽位放在那一类线旁边一块空着的地方（不压线、不挪版式），文字由 boardLinkLabels 按当前配置填 */
@@ -1345,7 +1386,8 @@
   }
   boardStage.addEventListener('click', function (ev) {
     var npu = ev.target.closest('.p-npu');
-    if (npu) { var r = +npu.getAttribute('data-rank'); if (r !== curSel) showTier2(r, coordLine(r)); return; }
+    // 板视图本来就是放大后的样子：再点选中的那颗 = 进 NPU 页（10.29，同集群 POD 取景后的再点）
+    if (npu) { var r = +npu.getAttribute('data-rank'); if (r !== curSel) showTier2(r, coordLine(r)); else showDetail(r); return; }
     if (curSel != null) { showOverview(true); return; }
     boardZP.reset();
   });
@@ -1649,7 +1691,10 @@
     var a = b.getAttribute('data-zoom');
     /* NPU 页：画布是引擎的 3D 场景，缩放 / 复位转给它（引擎自己的缩放 HUD 已收起） */
     if (document.body.classList.contains('t3')) { try { detailFrame.contentWindow.postMessage({ type: 'pto:zoom', v: a }, '*'); } catch (e) {} return; }
-    if (hwOn()) { try { hwFrame.contentWindow.postMessage({ type: 'hw:zoom', dir: a }, '*'); } catch (e) {} return; }
+    if (hwOn()) {
+      if (a === 'reset' && level !== 'board') { physZP.reset(false); hwSync(); }   // 10.29 同平面图的复位：取景的 POD / SuperPoD 一起作废，不然下一次同步镜头又飞回去
+      try { hwFrame.contentWindow.postMessage({ type: 'hw:zoom', dir: a }, '*'); } catch (e) {} return;
+    }
     var z = curZP(), R = z.rect();
     if (a === 'reset') z.reset(); else z.zoomAt(a === 'in' ? 1.4 : 1 / 1.4, R.width / 2, R.height / 2);
   });
@@ -1746,7 +1791,7 @@
     leftCard.innerHTML = '<div class="gcard lc-cfg">'
       + '<div class="lc-big">' + world + '<small>NPU</small></div>'
       + '<div class="lc-chips">' + chips.map(function (x) { return '<span class="lc-chip"><em>' + x[0] + '</em>' + x[1] + '</span>'; }).join('') + '</div>'
-      + '<div class="lc-sub" title="rank 按连续摆放落位（配置里没有 rank→NPU 映射），这是假设">' + physCount.sp + ' SuperPoD · ' + physCount.pods + ' POD · ' + physCount.boards + ' Board *</div>'
+      + '<div class="lc-sub" title="rank 按连续摆放落位（配置里没有 rank→NPU 映射），这是假设">' + physCount.sp + ' SuperPoD · ' + physCount.pods + ' Rack · ' + physCount.boards + ' Board *</div>'
       + '</div>'
       + cmpCard()
       + rankHeadHtml()
@@ -1831,7 +1876,8 @@
   function setZero(z) {
     if (z === ZERO) return;
     saveBase();
-    ZERO = z; lastBrief = null; ppPeak = null;
+    ZERO = z; lastBrief = null; ppPeak = null; lastPipeDt = null;
+    alertAt = -1; alertKey = null; setAlertHi(null);   // 换 ZeRO 告警清单整个重算：上一条的定位高亮撤掉（不让一张已经不超容的卡还挂着超容红）
     var u = new URLSearchParams(location.search);
     if (z === (PS.zero || 0)) u.delete('zero'); else u.set('zero', String(z));
     history.replaceState(null, '', location.pathname + (u.toString() ? '?' + u.toString() : '') + location.hash);
@@ -2076,6 +2122,9 @@
     clearTimeout(detailRevealT); detailRevealT = null; document.body.classList.remove('is-loading');
     if (clusterStale) { clusterStale = false; if (curSel != null) requestTier2Brief(curSel); else requestClusterBrief(); }
     if (level === 'board') renderBoard(curBoard); else renderPhys();
+    /* 10.29 回到集群 / 板这一档：先摘掉 t3 再挑舞台。hwOn() 认的是 body.t3，它要等调用方最后的 renderCrumb 才更新——
+       从 NPU 页退回来时还挂着，立体那一屏被当成「不在」，换上了平面图，工具条却仍亮着 3D、再点 3D 也不回来（反馈「还有我3d的场景了」） */
+    if (tier !== 3) document.body.classList.remove('t3');
     if (hwOn() && !physBuilt) renderPhys();   // 立体用的是平面图的同一份布局
     showStage(hwOn() ? hwFrame : level === 'board' ? boardStage : physStage);
     pullTrail();   // 从单卡 / 板回到记下镜头的那一层：拉回进去之前的取景
@@ -2378,7 +2427,7 @@
       + '<div class="brief-row"><span>RoCE</span><b>NIC' + Math.floor(p.slot / 2) + '</b></div></div>'
       + '<div class="brief-row brief-link1"><span>Link</span><b>mesh×7 · L1×8 · CPU' + (p.slot < 4 ? 0 : 1) + ' · NIC' + Math.floor(p.slot / 2) + '</b></div>';
     if (inCard) return html + phy;
-    return '<div class="brief-k brief-loc" title="落位为假设：rank 连续摆放">SuperPoD ' + p.sp + ' · POD ' + p.pod + ' · Board ' + p.board + ' · Slot ' + p.slot + '<sup>*</sup></div>' + html + phy;
+    return '<div class="brief-k brief-loc" title="落位为假设：rank 连续摆放">SuperPoD ' + p.sp + ' · Rack ' + p.pod + ' · Board ' + p.board + ' · Slot ' + p.slot + '<sup>*</sup></div>' + html + phy;
   }
 
   /* rank 详情卡的正文（容量徽标 + 坐标/层区间 + 显存构成 + 合计）——第二档
@@ -2498,7 +2547,17 @@
      原生的一列，而不是嵌那份彩色页面：L7 Global → L6 集群 → L5 SuperPoD → L4 POD → L3 板 →
      L2 NPU → L1 Die → L0 Core-Group。L4/L3/L2 是正方形宫格，灰度 = 占用率（同画布那把尺，超容红），
      聚合层取 Peak；每一层标出在这一层内闭合的并行维度（由本页的 linkLevel 算，不是写死）。
-     点 POD / 板 / NPU 画布跟着走；选中的那一格描白。 */
+     点 POD / 板 / NPU 画布跟着走；选中的那一格描白。
+     10.29 层间联动（反馈「上下之间的高亮联动保留，现在没有了也不能选」）：原来只认 curSel——取景到 POD、进板、取景超节点、聚焦一段时
+     面板一格都不亮，点了 POD / 板 / 超节点也看不出「选上了」；选中 rank 时那圈 1.5px 白框套在 4px 的 NPU 格上几乎看不见，
+     贴边那一行还被画布切掉一边；超节点胶囊的选中态（10.16 起的深底）在面板底色上也看不出来。现在面板只认一个「当前对象」
+     ——最深的那一层：rank > 板视图 > 取景的 POD > 取景的 SuperPoD（引自 cube-cockpit 的层级剖面：选 Pod → 上面框服务池、下面框它那 16 台 Host）：
+       当前对象白框；它的上级各层浅灰框；下级各层把它覆盖的那一段框出来（POD = 板格里的 8 格、NPU 格里一整行；板 = NPU 格里 8 格；
+       SuperPoD = 各层若干整行），L1 Die / L0 Core-Group 在选中 rank 时跟着亮；与它无关的格子退后一档——「有关」同画布的压暗口径：
+       选中 rank 时是它的五个 Comm 组，聚焦一段时是那一段，并行对象是那一组，都没有时是当前对象覆盖的那一段。
+     悬停任一层的一格 = 预览：它自己和上下各层对应的那一段提亮一档（半透明白罩，不是框——框留给当前对象与它的上下级），不改状态。点任一层 = 把它设成当前对象，画布同画布自己的规则走
+     （NPU 选中、板进板视图、POD / SuperPoD 取景）；再点选中的 rank 同画布（先放大到它的 POD，再点进 NPU 页）；再点当前的板 / POD / SuperPoD = 退回上一层
+     （板退回它的 POD、POD 退回它的 SuperPoD、SuperPoD 回整个集群）。状态从哪条路径变（画布、2.5D / 3D 点选、泳道、告警、面包屑、Logical Cube）都对一遍键、变了才重画。 */
   var hierAgg = null;
   function hierAggregates() {
     if (hierAgg && hierAgg.src === lastCluster) return hierAgg;
@@ -2514,25 +2573,44 @@
   }
   var HC = { c0: '#4A4A4A', c1: '#808080', c2: '#BDBDBD', c3: '#F85149', none: '#282828' };
   function cellColor(v, bad) { if (bad) return HC.c3; if (v == null || v < 0 || !lastCluster) return HC.none; return v >= lastCluster.red ? HC.c2 : v >= lastCluster.amber ? HC.c1 : HC.c0; }
-  function drawGrid(cv, n, cols, grp, cell, gap, ggap, colorOf, selIdx) {
-    /* 每一层都撑满面板宽（反馈「所有层级都适配宽度，不要一个长一个短」）：cell 只是下限参考，
-       实际格宽 = (可用宽 − 缝) / 列数，格子保持正方形 */
-    var ng = Math.floor((cols - 1) / grp), avail = cv.parentNode ? cv.parentNode.clientWidth : 0;
-    if (avail > 0) cell = Math.max(2, (avail - (cols - 1) * gap - ng * ggap) / cols);
-    var rows = Math.ceil(n / cols), W = cols * cell + (cols - 1) * gap + ng * ggap, H = rows * (cell + gap) - gap;
+  /* 量尺寸（只在重建面板时）：四周留 2px，贴边那一格的框不被画布切掉；命中直接按行列算，不再逐格比（4096 格） */
+  function drawGrid(cv, n, cols, grp, gap, ggap, colorOf) {
+    /* 每一层都撑满面板宽（反馈「所有层级都适配宽度，不要一个长一个短」）：实际格宽 = (可用宽 − 缝) / 列数，格子保持正方形 */
+    var P = 2, ng = Math.floor((cols - 1) / grp), avail = (cv.parentNode && cv.parentNode.clientWidth) || 340;
+    var cell = Math.max(2, (avail - 2 * P - (cols - 1) * gap - ng * ggap) / cols);
+    var rows = Math.ceil(n / cols), W = cols * cell + (cols - 1) * gap + ng * ggap + 2 * P, H = rows * (cell + gap) - gap + 2 * P;
     var d = Math.min(window.devicePixelRatio || 1, 2);
-    cv.width = W * d; cv.height = H * d; cv.style.width = W + 'px'; cv.style.height = H + 'px';
-    var ctx = cv.getContext('2d'); ctx.setTransform(d, 0, 0, d, 0, 0);
-    var rects = [];
-    for (var i = 0; i < n; i++) {
-      var c = i % cols, r = Math.floor(i / cols), x = c * (cell + gap) + Math.floor(c / grp) * ggap, y = r * (cell + gap);
-      ctx.fillStyle = colorOf(i); ctx.fillRect(x, y, cell, cell); rects.push([x, y]);
-    }
-    if (selIdx != null && rects[selIdx]) { ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 1.5; ctx.strokeRect(rects[selIdx][0] - 1, rects[selIdx][1] - 1, cell + 2, cell + 2); }
+    cv.width = Math.round(W * d); cv.height = Math.round(H * d); cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    var g = cv._g = { n: n, cols: cols, grp: grp, gap: gap, ggap: ggap, cell: cell, P: P, d: d, W: W, H: H, colorOf: colorOf };
     cv._hit = function (px, py) {
-      for (var k = 0; k < rects.length; k++) if (px >= rects[k][0] - gap / 2 && px < rects[k][0] + cell + gap / 2 && py >= rects[k][1] - gap / 2 && py < rects[k][1] + cell + gap / 2) return k;
-      return -1;
+      var r = Math.floor((py - P + gap / 2) / (cell + gap)), c = -1;
+      for (var k = 0; k < cols; k++) { var x = gridXY(g, k)[0]; if (px >= x - gap / 2 - (k % grp ? 0 : ggap / 2) && px < x + cell + gap / 2 + ((k + 1) % grp ? 0 : ggap / 2)) { c = k; break; } }
+      var i = r * cols + c; return r < 0 || c < 0 || i >= n ? -1 : i;
     };
+  }
+  function gridXY(g, i) { var c = i % g.cols, r = Math.floor(i / g.cols); return [g.P + c * (g.cell + g.gap) + Math.floor(c / g.grp) * g.ggap, g.P + r * (g.cell + g.gap)]; }
+  /* 重画一张格子（状态变了、或悬停换了一格）：rel = 每格「有关」（null = 不退后），frames = [起, 止, 颜色, 线宽, 整格填] 的框，
+     glow = 悬停预览的那一段 [起, 止]：整段提亮一档（半透明白罩），与选中 / 上下级的框分得开 */
+  /* 退后一档与画布同一个旋钮（pattern.css 的 --recede，反馈「这种隐去的部分太隐秘了」）：面板里无关的格子与画布上压暗的器件同一个透明度 */
+  var RECEDE = null;
+  function recedeK() { if (RECEDE == null) RECEDE = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--recede')) || 0.5; return RECEDE; }
+  function paintGrid(cv, rel, frames, glow) {
+    var g = cv._g; if (!g) return;
+    var ctx = cv.getContext('2d'); ctx.setTransform(g.d, 0, 0, g.d, 0, 0); ctx.clearRect(0, 0, g.W, g.H);
+    for (var i = 0; i < g.n; i++) {
+      var p = gridXY(g, i); ctx.globalAlpha = !rel || rel[i] || (glow && i >= glow[0] && i < glow[1]) ? 1 : recedeK();
+      ctx.fillStyle = g.colorOf(i); ctx.fillRect(p[0], p[1], g.cell, g.cell);
+    }
+    ctx.globalAlpha = 1;
+    if (glow) { ctx.fillStyle = 'rgba(255,255,255,.3)'; for (i = Math.max(0, glow[0]); i < Math.min(g.n, glow[1]); i++) { p = gridXY(g, i); ctx.fillRect(p[0], p[1], g.cell, g.cell); } }
+    frames.forEach(function (f) {
+      var a = Math.max(0, f[0]), b = Math.min(g.n, f[1]); if (b <= a) return;
+      var p = gridXY(g, a), q = gridXY(g, b - 1), x0 = Math.min(p[0], q[0]), x1 = Math.max(p[0], q[0]) + g.cell, o = Math.min(g.gap, 1.5) / 2 + f[3] / 2;
+      if (q[1] > p[1]) { x0 = gridXY(g, 0)[0]; x1 = gridXY(g, g.cols - 1)[0] + g.cell; }   // 跨行的段都是整行（各层按 8 / 64 / 1024 对齐）
+      ctx.strokeStyle = f[2]; ctx.lineWidth = f[3];
+      ctx.strokeRect(x0 - o, p[1] - o, x1 - x0 + 2 * o, q[1] + g.cell - p[1] + 2 * o);
+      if (f[4]) { ctx.fillStyle = f[2]; ctx.fillRect(p[0], p[1], g.cell, g.cell); }   // 小于 6px 的 NPU 格：当前那一格整格填白，光一圈框看不出来
+    });
   }
   function hierDims() {
     var r0 = curSel != null ? curSel : 0, g = commGroups(r0), by = { 0: [], 1: [], 2: [], 3: [] };
@@ -2542,33 +2620,95 @@
     rows.forEach(function (x) { if (x[1].length > 1) by[linkLevel(x[1], x[2])].push(x[0] + '×' + x[1].length); });
     return by;   // 0 Board 内 → L3，1 POD → L4，2 SP → L5，3 跨 SP → L6
   }
+  /* 各层一格管多少张卡：SuperPoD 1024 · POD 64 · Board 8 · NPU 1 */
+  var HU = { sp: PHYS.sp, pod: PHYS.pod, board: PHYS.board, chip: 1 };
+  var hierSP = null, hierHover = null, hierKey = null, hierRel = null;
+  /* 当前对象：最深的那一层（rank > 板视图 > 取景的 POD > 取景的 SuperPoD） */
+  function hierCur() {
+    return curSel != null ? { k: 'chip', i: curSel } : level === 'board' && curBoard != null ? { k: 'board', i: curBoard }
+      : fitPod != null ? { k: 'pod', i: fitPod } : hierSP != null ? { k: 'sp', i: hierSP } : null;
+  }
+  function hierStateKey() { return [curSel, level, curBoard, fitPod, hierSP, focusPP, OBJ.dim, OBJ.idx, ANN.grp, lastCluster ? 1 : 0].join('|'); }
+  /* 「有关」：同 physApplySelection 的压暗口径，逐 rank 一位；上面几层 = 这一格里有任何一张有关 */
+  function hierRelSet(cur) {
+    var R = new Uint8Array(world), any = false, r;
+    if (curSel != null && ANN.grp) { var g = commGroups(curSel); ['pp', 'dp', 'ep', 'cp', 'tp'].forEach(function (k) { g[k].forEach(function (x) { R[x] = 1; }); }); R[curSel] = 1; any = true; }
+    else if (curSel == null && OBJ.dim) { for (r = 0; r < world; r++) if (objVal(r, OBJ.dim) === OBJ.idx) R[r] = 1; any = true; }
+    else if (curSel == null && focusPP != null) { for (r = 0; r < world; r++) if (coordOfRank(r).pp === focusPP) R[r] = 1; any = true; }
+    else if (curSel != null) return null;   // 关了 Comm 组标注：画布选中时谁都不压暗，面板也不退后
+    else if (cur) { var u = HU[cur.k]; for (r = cur.i * u; r < Math.min(world, cur.i * u + u); r++) R[r] = 1; any = true; }
+    if (!any) return null;
+    var out = { chip: R, board: new Uint8Array(physCount.boards), pod: new Uint8Array(physCount.pods), sp: new Uint8Array(physCount.sp) };
+    for (r = 0; r < world; r++) if (R[r]) { out.board[Math.floor(r / PHYS.board)] = 1; out.pod[Math.floor(r / PHYS.pod)] = 1; out.sp[Math.floor(r / PHYS.sp)] = 1; }
+    return out;
+  }
+  /* 一个对象在某一层占哪几格：同层 = 它自己，上级 = 它所在那一格，下级 = 它覆盖的那一段 */
+  function hierSpan(o, kind) { var u = HU[o.k], v = HU[kind], r0 = o.i * u, r1 = Math.min(world, r0 + u); return [Math.floor(r0 / v), Math.ceil(r1 / v)]; }
+  function paintHier() {
+    var root = drawerBody && drawerOpen === 'hier' ? drawerBody.querySelector('.hv') : null; if (!root) return;
+    var cur = hierCur(), hov = hierHover, rel = hierRel;
+    root.querySelectorAll('canvas.hv-grid').forEach(function (cv) {
+      var kind = cv.getAttribute('data-hl'), fr = [];
+      if (cur) { var s = hierSpan(cur, kind), self = cur.k === kind; fr.push([s[0], s[1], self ? '#FFFFFF' : '#A8A8A8', self ? 1.5 : 1, self && cv._g && cv._g.cell < 6]); }
+      paintGrid(cv, rel && rel[kind], fr, hov && !(cur && hov.k === cur.k && hov.i === cur.i) ? hierSpan(hov, kind) : null);
+    });
+    var spOn = cur ? hierSpan(cur, 'sp') : null, spHov = hov ? hierSpan(hov, 'sp') : null;
+    root.querySelectorAll('[data-hsp]').forEach(function (b) {
+      var i = +b.getAttribute('data-hsp'), inCur = spOn && i >= spOn[0] && i < spOn[1];
+      b.classList.toggle('is-on', !!(inCur && cur.k === 'sp'));
+      b.classList.toggle('is-up', !!(inCur && cur.k !== 'sp'));
+      b.classList.toggle('is-hov', !!(spHov && i >= spHov[0] && i < spHov[1]));
+      b.classList.toggle('is-dim', !!(rel && !rel.sp[i] && !inCur));   // 当前对象与它的上级不退后（同格子里的框）
+    });
+    var bar = root.querySelector('[data-hact="root"]'); if (bar) bar.classList.toggle('is-up', !!cur);
+    // L1 / L0 是「每张 NPU 里」：选中（或悬停）一张 NPU 时，它们就是那一张的，跟着亮、抬头写上 rank 号
+    var npu = hov && hov.k === 'chip' ? hov.i : curSel;
+    root.querySelectorAll('[data-hin]').forEach(function (row) {
+      row.classList.toggle('is-rel', npu != null);
+      var ct = row.querySelector('.hv-ct'), t9 = row.getAttribute('data-hin'); if (ct) ct.textContent = npu != null ? t9.replace(' / NPU', ' · rank ' + npu) : t9;
+    });
+  }
+  function hierSync() { if (drawerOpen === 'hier' && hierKey !== hierStateKey()) renderHier(); }
   function renderHier() {
     if (!drawerBody || drawerOpen !== 'hier') return;
-    var A = hierAggregates(), dims = hierDims(), here = curSel != null ? physOf(curSel) : null;
+    var st0 = drawerBody.scrollTop;   // 重建面板不丢滚动位置（画布上取景一个 POD、选中一张卡都会重建；原来每次都弹回顶上）
+    var A = hierAggregates(), dims = hierDims();
     var nPod = physCount.pods, nBoard = physCount.boards;
     function hd(lv, nm, ct, dm) {
       return '<div class="hv-hd"><span class="hv-lv">' + lv + '</span><span class="hv-nm">' + nm + '</span><span class="hv-ct">' + ct + '</span>'
         + (dm && dm.length ? '<span class="hv-dims">' + dm.map(function (t) { var k = t.slice(0, 2).toLowerCase(); return GC[k] ? '<b style="color:' + GC[k] + '">' + t + '</b>' : t; }).join(' · ') + '</span>' : '') + '</div>';
     }
     var sp = '';
-    for (var i = 0; i < physCount.sp; i++) sp += '<button type="button" class="hv-chip' + (here && here.sp === i ? ' is-on' : '') + '" data-hsp="' + i + '">SuperPoD ' + i + '</button>';
+    for (var i = 0; i < physCount.sp; i++) sp += '<button type="button" class="hv-chip" data-hsp="' + i + '">SuperPoD ' + i + '</button>';
     var die = ['D0 · Compute', 'D1 · Compute', 'D2 · IO', 'D3 · IO'].map(function (t) { return '<span class="hv-die' + (t.indexOf('IO') > 0 ? ' is-io' : '') + '">' + t + '</span>'; }).join('');
     var cg = ''; for (var k = 0; k < 32; k++) cg += '<i></i>';
     drawerBody.innerHTML = '<div class="hv">'
       + '<div class="hv-row is-ghost">' + hd('L7', 'Global', 'N Clusters · DCN') + '</div>'
-      + '<div class="hv-row">' + hd('L6', 'Cluster', world + ' NPU', dims[3]) + '<button type="button" class="hv-bar" data-hact="root">' + physCount.sp + ' SuperPoD · ' + nPod + ' POD · ' + nBoard + ' Board</button></div>'
+      + '<div class="hv-row">' + hd('L6', 'Cluster', world + ' NPU', dims[3]) + '<button type="button" class="hv-bar" data-hact="root">' + physCount.sp + ' SuperPoD · ' + nPod + ' Rack · ' + nBoard + ' Board</button></div>'
       + '<div class="hv-row">' + hd('L5', 'SuperPoD', physCount.sp + ' · 1024 NPU/SuperPoD', dims[2]) + '<div class="hv-chips">' + sp + '</div></div>'
-      + '<div class="hv-row">' + hd('L4', 'POD', nPod + ' · 64 NPU/POD', dims[1]) + '<canvas class="hv-grid" data-hl="pod"></canvas></div>'
+      + '<div class="hv-row">' + hd('L4', 'Rack', nPod + ' · 64 NPU/Rack', dims[1]) + '<canvas class="hv-grid" data-hl="pod"></canvas></div>'
       + '<div class="hv-row">' + hd('L3', 'Board', nBoard + ' · 8 NPU + 2 CPU', dims[0]) + '<canvas class="hv-grid" data-hl="board"></canvas></div>'
       + '<div class="hv-row">' + hd('L2', 'NPU', world + ' · Ascend 950') + '<canvas class="hv-grid" data-hl="chip"></canvas></div>'
-      + '<div class="hv-row">' + hd('L1', 'Die', '×4 / NPU') + '<div class="hv-dies">' + die + '</div></div>'
-      + '<div class="hv-row">' + hd('L0', 'Core-Group', '×32 / NPU · AIC / AIV') + '<div class="hv-cg">' + cg + '</div></div>'
+      + '<div class="hv-row" data-hin="×4 / NPU">' + hd('L1', 'Die', '×4 / NPU') + '<div class="hv-dies">' + die + '</div></div>'
+      + '<div class="hv-row" data-hin="×32 / NPU · AIC / AIV">' + hd('L0', 'Core-Group', '×32 / NPU · AIC / AIV') + '<div class="hv-cg">' + cg + '</div></div>'
       + '</div>';
     var cvs = drawerBody.querySelectorAll('canvas.hv-grid');
-    drawGrid(cvs[0], nPod, 16, 8, 17, 2, 4, function (i9) { return cellColor(A.pod[i9] && A.pod[i9].v, A.pod[i9] && A.pod[i9].bad); }, here ? here.pod : null);
-    drawGrid(cvs[1], nBoard, 32, 8, 7, 1, 4, function (i9) { return cellColor(A.board[i9] && A.board[i9].v, A.board[i9] && A.board[i9].bad); }, here ? here.board : null);
-    drawGrid(cvs[2], world, 64, 8, 4, 1, 2, function (i9) { return cellColor(lastCluster && lastCluster.ratio ? lastCluster.ratio[i9] : null, !!(oomSet && oomSet[i9])); }, curSel);
+    drawGrid(cvs[0], nPod, 16, 8, 2, 4, function (i9) { return cellColor(A.pod[i9] && A.pod[i9].v, A.pod[i9] && A.pod[i9].bad); });
+    drawGrid(cvs[1], nBoard, 32, 8, 1, 4, function (i9) { return cellColor(A.board[i9] && A.board[i9].v, A.board[i9] && A.board[i9].bad); });
+    drawGrid(cvs[2], world, 64, 8, 1, 2, function (i9) { return cellColor(lastCluster && lastCluster.ratio ? lastCluster.ratio[i9] : null, !!(oomSet && oomSet[i9])); });
+    hierKey = hierStateKey(); hierRel = hierRelSet(hierCur());
+    paintHier();
+    drawerBody.scrollTop = st0;
   }
+  /* 取景 POD / SuperPoD、2.5D / 3D 点选这几条路径只改 fitPod、不走 physApplySelection（那里才叫 renderPanel）——它们都会叫
+     renderDataCards（rAF 合并、21 处）：挂在它后面对一下面板的状态键，变了才重画；面板没开就是一次比较 */
+  renderDataCards = (function (f) { return function () { f(); hierSync(); }; })(renderDataCards);
+  /* 取景到哪个 SuperPoD 画布上不留状态（不像 fitPod）：面板自己记——点胶囊、或画布上点超节点框时记下，复位（回整个集群）时清掉 */
+  (function () { var r0 = physZP.reset; physZP.reset = function (a, d) { hierSP = null; return r0(a, d); }; })();
+  physStage.addEventListener('click', function (ev) {
+    if (ev.target.closest('.p-npu, .p-pod')) return;
+    var sp9 = ev.target.closest('.p-sp'); if (sp9) { hierSP = +sp9.getAttribute('data-sp'); hierSync(); }
+  });
   /* ── 原生泳道：本预置一步训练的 1F1B 调度 ──────────────────────────────────────────
      每段（PP 号）一条道，道上是这一段处理的全部 GA 个 micro-batch：前向（蓝）、反向（粉），
      调度按标准 1F1B（第 p 段先灌 PP−p−1 个前向，之后一前一后，最后排空反向）逐个解依赖算出来；
@@ -2825,25 +2965,66 @@
     if (swimHover) { swimHover = null; renderSwim(); }
   });
   function renderPanel() { if (drawerOpen === 'hier') renderHier(); else if (drawerOpen === 'swimlane') renderSwim(); }
-  function ensureCluster() { if (tier === 3 || level !== 'cluster') { showOverview(); } }
+  /* 回到集群层（POD / SuperPoD 取景之前）；选中与聚焦的段都留着——同画布上点 POD / 超节点框不取消选中 */
+  function ensureCluster() { if (tier === 3 || level !== 'cluster') { level = 'cluster'; if (curSel != null) showTier2(curSel, coordLine(curSel)); else showOverview(true); } }
+  /* 面板上的点选（反馈「…也不能选」）：点哪一层 = 把它设成当前对象，画布按画布自己的规则走；再点当前的板 / POD / SuperPoD = 退回上一层，再点选中的 rank 同画布。
+     2.5D / 3D 下镜头在引擎里：取景之后补一次 hwSync（画布上点 POD 的那条路径 hwPick 也是这么做的） */
+  /* 选中的卡不在点的这个 POD / SuperPoD 里：取消选中——它的画面已经不在镜头里，面板的当前对象换成点的这一个（不然面板还框着那张卡、3D 镜头不跟）；
+     在里面就留着选中（同画布上点 POD / 超节点框） */
+  function hierFitPod(p) { ensureCluster(); if (curSel != null && physOf(curSel).pod !== p) showOverview(true); zoomToPod(p * PHYS.pod); hwSync(); }
+  function hierFitSP(s) {
+    ensureCluster(); if (curSel != null && physOf(curSel).sp !== s) showOverview(true);
+    fitSP(s);
+  }
+  function fitSP(s) {
+    var el = physStage.querySelector('.p-sp[data-sp="' + s + '"]'); if (!el) return;
+    // 同画布点超节点框：POD 取景作废，镜头取景到这个 SuperPoD（原来面板这一下 fitPod 还留着，卡片还写着上一个 POD）
+    fitPod = null; physStage.querySelectorAll('.p-pod.is-fit').forEach(function (e9) { e9.classList.remove('is-fit'); });
+    physZP.fitVB(+el.getAttribute('x'), +el.getAttribute('y'), +el.getAttribute('width'), +el.getAttribute('height'), 30, true);
+    hierSP = s; renderDataCards(); hwSync();
+  }
+  function hierPick(kind, k) {
+    var cur = hierCur(), again = !!(cur && cur.k === kind && cur.i === k);
+    if (kind === 'chip') {
+      var q = physOf(k);
+      /* 再点选中的 rank = 同画布再点选中格：还没放大就放大到它的 POD，已取景到它的 POD / 在它那块板上就进 NPU 页（面板与画布一条规则） */
+      if (again) { if (fitPod === q.pod || (level === 'board' && curBoard === q.board)) showDetail(k); else { zoomToPod(k); hwSync(); } return; }
+      showTier2(k, coordLine(k));
+      if (level === 'board' && curBoard !== q.board) { setFitPod(q.pod); goBoard(q.board, true); }   // 板视图里点了别的板上的卡：换到那块板，面包屑 / 板视图 / 选中是同一块
+      else if (level === 'cluster' && fitPod != null && fitPod !== q.pod) { zoomToPod(k); hwSync(); }   // 镜头正取景着别的 POD：跟过去，选中的卡在画面里
+      else if (level === 'cluster' && fitPod == null && hierSP != null && hierSP !== q.sp) fitSP(q.sp);   // 镜头正取景着别的 SuperPoD：同样跟过去
+      return;
+    }
+    if (kind === 'board') { if (again) hierFitPod(Math.floor(k * PHYS.board / PHYS.pod)); else { setFitPod(Math.floor(k * PHYS.board / PHYS.pod)); goBoard(k, true); } return; }   // 同画布：选中的卡在这块板上就留着   // 再点当前这块板 = 退回它的 POD
+    if (kind === 'pod' && !again) { hierFitPod(k); return; }
+    if (kind === 'pod' && physCount.sp > 1) { hierFitSP(Math.floor(k * PHYS.pod / PHYS.sp)); return; }   // 再点当前 POD = 退回它的 SuperPoD
+    if (kind === 'sp' && !again) { hierFitSP(k); return; }
+    physZP.reset(true); showOverview();   // 再点当前 SuperPoD（只有一个 SuperPoD 时再点 POD）= 回到整个集群
+  }
   drawerBody && drawerBody.addEventListener('click', function (ev) {
     var t = ev.target;
     if (drawerOpen === 'swimlane') { swimClick(ev); return; }
+    if (drawerOpen !== 'hier') return;
     if (t.closest('[data-hact="root"]')) { physZP.reset(); showOverview(); return; }
     var spb = t.closest('[data-hsp]');
-    if (spb) { ensureCluster(); var el = physStage.querySelector('.p-sp[data-sp="' + spb.getAttribute('data-hsp') + '"]'); if (el) physZP.fitVB(+el.getAttribute('x'), +el.getAttribute('y'), +el.getAttribute('width'), +el.getAttribute('height'), 30, true); return; }
+    if (spb) { hierPick('sp', +spb.getAttribute('data-hsp')); return; }
     if (t.tagName !== 'CANVAS' || !t._hit) return;
     var rc = t.getBoundingClientRect(), k = t._hit(ev.clientX - rc.left, ev.clientY - rc.top); if (k < 0) return;
-    var kind = t.getAttribute('data-hl');
-    if (kind === 'pod') { ensureCluster(); zoomToPod(k * PHYS.pod); }
-    else if (kind === 'board') goBoard(k, false);
-    else if (kind === 'chip') showTier2(k, coordLine(k));
+    hierPick(t.getAttribute('data-hl'), k);
   });
+  /* 悬停 = 预览：这一格与上下各层对应的那一段提亮（只重画三张格子，不重建面板） */
   drawerBody && drawerBody.addEventListener('mousemove', function (ev) {
-    var t = ev.target; if (t.tagName !== 'CANVAS' || !t._hit) return;
-    var rc = t.getBoundingClientRect(), k = t._hit(ev.clientX - rc.left, ev.clientY - rc.top), kind = t.getAttribute('data-hl');
-    t.title = k < 0 ? '' : kind === 'pod' ? 'POD ' + k : kind === 'board' ? 'Board ' + k : 'rank ' + k + ' · ' + coordLine(k);
+    if (drawerOpen !== 'hier') return;
+    var t = ev.target, o = null, spb = t.closest('[data-hsp]');
+    if (spb) o = { k: 'sp', i: +spb.getAttribute('data-hsp') };
+    else if (t.tagName === 'CANVAS' && t._hit) {
+      var rc = t.getBoundingClientRect(), k = t._hit(ev.clientX - rc.left, ev.clientY - rc.top), kind = t.getAttribute('data-hl');
+      t.title = k < 0 ? '' : kind === 'pod' ? 'Rack ' + k : kind === 'board' ? 'Board ' + k : 'rank ' + k + ' · ' + coordLine(k);
+      if (k >= 0) o = { k: kind, i: k };
+    }
+    if ((o && o.k + o.i) !== (hierHover && hierHover.k + hierHover.i)) { hierHover = o; paintHier(); }
   });
+  drawerBody && drawerBody.addEventListener('mouseleave', function () { if (hierHover) { hierHover = null; paintHier(); } });
 
   /* ── 配置浮层（工具条「配置」；反馈「对应的配置也要拿过来，简化显示」）──────────────────
      把 combo-workbench 顶栏的「并行配置 / 并行对象 / 数据标注」与矩阵本体设置面板里和本页
@@ -2995,35 +3176,41 @@
   var MODE = qs.get('mode') === 'infer' ? 'infer' : 'train';
   var dataCol = document.getElementById('dataCol'), shardL = document.getElementById('shardL');
 
-  /* ── 目的导向的引导（反馈「不喜欢步骤条，要以任务为导向 / 以告警定位为导向，按用户的目的来引导」）────────────
-     标题正上方居中一枚玻璃胶囊：左边工况（Train / Inference），右边几个「我要做什么」——没有序号、没有先后，
-     谁来都先看自己要的那一件。第一个永远是「定位告警」：角标是当前要处理的告警数；点开在胶囊下面列出告警，
-     按严重度排（超容 → 红线 → 数值 / 路由告警层 → 气泡 → 参考读数 → 历史故障复盘），每条一句「是什么 · 在哪」，
-     点一下直接定位：到那张 NPU（下钻 rank）、到那一段（PP 段聚焦）、或展开那条故障链。
-     其余几个目的：点了只留这件事用得上的数据卡，画布 / 面板切到该看的地方，下面一行灰字是这件事要回答的问题；
-     再点一次 = 回到全部。URL ?goal=键。NPU 层（第三档）不按目的收卡。 */
-  /* 场景而不是数据类型（反馈「这里应该是场景，而不是按数据类型」）：每个场景是用户在训练 / 推理里的一件事，
-     点开后把这件事要用到的几类数据一起摆出来（容量、Comm、流水……跨类组合），画布 / 面板切到该看的地方。 */
+  /* ── 场景页签（反馈「不喜欢步骤条，要以任务为导向 / 以告警定位为导向，按用户的目的来引导」「这里应该是场景，而不是按数据类型」）────────────
+     标题正上方居中一枚玻璃胶囊：左边工况（Train / Inference），右边几个场景——每个场景是用户在训练 / 推理里的一件事，点了只留这件事用得上的数据卡
+     （跨类组合：容量、Comm、流水……），画布 / 面板切到该看的地方；问句只在按钮的悬停提示里。URL ?goal=键。NPU 层（第三档）不按场景收卡。
+     10.29：一度撤掉场景、卡片全量摊开（反馈「感觉这个好像没有太大的用处，要不直接卡片全量显示，可以折叠吧」），看过之后又要回来
+     （反馈「之前的场景还是要有的，因为现在没有场景之后显示的卡片有点太多了」）——恢复，而且永远停在一个场景上：默认「故障定位」，
+     不再有「全部」那一档（再点当前场景不撤）；场景里的卡默认展开、照旧点卡头折叠。工况两边口径不同（占用率、卡片、告警、泳道、场景都换），
+     留着（反馈「训练和推理对于数据的显示有区别吗？如果有的话还是保留吧」）。
+     「故障定位」带告警角标（当前要处理的告警数，有超容时红）：切到它时在胶囊下面列出告警，已经在它上面时再点 = 展开 / 收起清单；
+     按严重度排（超容 → 红线 → 数值 / 路由告警层 → 气泡 → 参考读数 → 历史故障复盘），每条一句「是什么 · 在哪」，点一下定位并收起清单。 */
   var GOALS = {
     train: [
       { k: 'alert', n: '故障定位', q: '', cards: ['cap', 'state', 'health', 'moe', 'pipe', 'inc'], go: 'alerts' },
       { k: 'plan', n: '切分规划', q: '这套切分装得下吗？每一维 Comm 在哪一层闭合？', cards: ['cap', 'state', 'wshard', 'comm', 'pipe'], go: 'hier' },
       { k: 'map', n: '设备映射', q: '每个 rank 落在哪张物理卡上？同一组的卡挨不挨着？', cards: ['comm', 'phys', 'cap'], go: 'map' },
-      { k: 'perf', n: '性能调优', q: 'Throughput、Step Time、Bubble、MoE 负载正常吗？慢在哪一段？', cards: ['thr', 'step', 'pipe', 'moe', 'health'], go: 'swim' },
+      { k: 'perf', n: '性能调优', q: 'Throughput、Step Time、Bubble、MoE 负载正常吗？慢在哪一段？', cards: ['thr', 'step', 'pipe', 'moe', 'health', 'pub'], go: 'swim' },
       { k: 'tune', n: '变更评估', q: '改了 ZeRO / 切分 / 预置之后，变好还是变差？', cards: ['cmp', 'cap', 'state', 'step', 'thr', 'pipe'], go: 'cfg' }
     ],
     infer: [
       { k: 'alert', n: '故障定位', q: '', cards: ['cap', 'state', 'moe', 'infer'], go: 'alerts' },
       { k: 'plan', n: '部署规划', q: '权重 + KV Cache 放得下吗？Batch 还能加多少？', cards: ['cap', 'state', 'wshard', 'comm'], go: 'hier' },
-      { k: 'perf', n: '时延优化', q: 'TTFT、TPOT 达标吗？慢在 prefill 还是 decode？', cards: ['infer', 'moe', 'comm', 'state'], go: 'swim' },
+      { k: 'perf', n: '时延优化', q: 'TTFT、TPOT 达标吗？慢在 prefill 还是 decode？', cards: ['infer', 'moe', 'comm', 'state', 'pub'], go: 'swim' },
       { k: 'tune', n: '扩缩评估', q: '加卡或改切分之后，装得下、够快吗？', cards: ['cmp', 'infer', 'cap', 'state', 'comm'], go: 'cfg' }
     ]
   };
   function stageOf(k) { return (GOALS[MODE] || []).filter(function (x) { return x.k === k; })[0] || null; }
-  var STAGE = stageOf(qs.get('goal') || ''), stageObj = false, alertAt = -1;
+  var STAGE = stageOf(qs.get('goal') || '') || stageOf('alert'), stageObj = false;
   function stageShows(key) { return !STAGE || tier === 3 || STAGE.cards.indexOf(key) >= 0; }
+  /* alertHi：点中的那条告警指着的对象（{ sev, pp } 一段 / { sev, rank } 一张卡），画布上按它的状态色亮（见 physApplySelection）；
+     聚焦撤了或换了选中就失效（反馈「这里点击告警的高亮不明显，这种可以用状体色」） */
+  /* alertKey = 点中那条的身份（严重度 | 指标 | 对象）：清单按新数据重算后（换 ZeRO、换工况）按它找回同一条——找不到就连高亮一起撤，
+     不让一张已经不超容的卡还挂着超容红（只记下标的话，重算后 is-on 会落到不相干的那一行）。alertGoing：定位途中的中间几遍选中先不判失效 */
+  var alertOpen = false, alertAt = -1, alertHi = null, alertKey = null, alertGoing = false;
+  function alertKeyOf(x) { return x.sev + '|' + x.t.split(' ')[0] + '|' + x.w; }   // 「在哪」整段（层号 · 段 / rank）：同一段里两条 Amax 也分得开
   var journey = document.createElement('nav');
-  journey.className = 'journey is-hidden'; journey.setAttribute('aria-label', '按目的引导');
+  journey.className = 'journey is-hidden'; journey.setAttribute('aria-label', '按场景引导');
   document.body.appendChild(journey);
   /* 告警清单：每条 {sev: crit|warn|info|past, t: 指标（英文）, w: 在哪, go: 定位} */
   /* 每个 PP 段自己的路由失衡 Peak：{ pp, v, at }（imbL 从 health.l0 那一层起逐层排）——告警清单、板视图连线标签、链路状态共用这一个口径 */
@@ -3036,11 +3223,27 @@
     var C = lastCluster, B = rawBrief, out = [];
     if (!C || !B || B.ok === false) return out;
     var lps = (C.model && C.model.lps) || 1, ppOf = function (l) { return Math.min(PS.pp - 1, Math.floor(l / lps)); };
-    var goRank = function (r) { return function () { if (tier === 3) showOverview(true); showTier2(r, coordLine(r)); }; };
-    var goSeg = function (pp) { return function () { if (tier !== 1 || curSel != null) showOverview(true); focusSegment(pp); }; };
+    // 定位函数上挂着它指的对象（.hi）：点了之后那一段 / 那张卡按这条告警的状态色亮（见 alertHi）
+    /* 一张卡的告警：选中它，并把镜头推到它的 POD（远看它只是 4px 的一格，状态色看不出来）；在板视图里就换到它那块板（原来留在原板上、面包屑还写错板号）。
+       一段的告警：回到集群（板视图里看不到一整段）、撤掉并行对象（否则聚焦被并行对象的压暗盖住、什么都不变），再聚焦那一段 */
+    var goRank = function (r) { var f = function () {
+      if (tier === 3) showOverview(true);
+      var b9 = physOf(r).board; showTier2(r, coordLine(r));
+      if (level === 'board') { if (curBoard !== b9) { setFitPod(physOf(r).pod); goBoard(b9, true); } } else { zoomToPod(r); hwSync(); }   // 换板时它的 POD 一起记成取景对象：退出板视图落在这个 POD（不回到原来那个）
+    }; f.hi = { rank: r }; return f; };
+    var goSeg = function (pp, pps) { var f = function () {
+      if (OBJ.dim) { OBJ = { dim: null, idx: 0 }; setQS('obj', ''); renderCfg(); }
+      if (tier !== 1 || curSel != null || level === 'board') { level = 'cluster'; showOverview(true); }
+      /* 一段铺满整个集群：镜头回到全貌（上一条告警推到的 POD、板视图回来的取景、取景的 SuperPoD 一起撤），不然亮起来的那一段整个在画面外 */
+      physZP.reset(true);
+      focusSegment(pp); hwSync();
+    }; f.hi = { pp: pp, pps: pps }; return f; };
     var wr = C.worst, wv = wr != null && C.ratio ? C.ratio[wr] : null;
     if (C.n && C.n.oom) out.push({ sev: 'crit', t: 'OOM · ' + C.n.oom + ' ranks', w: 'rank ' + wr + ' · ' + pct(wv), go: goRank(wr) });
-    if (C.n && C.n.red) out.push({ sev: 'warn', t: 'Critical 88% · ' + C.n.red + ' ranks', w: 'rank ' + wr + ' · ' + pct(wv), go: goRank(wr) });
+    /* Critical 这一条指红档里最满、但没超容的那张卡：有 OOM 时全局最满那张就是 OOM 卡，点 Critical 会把一张红卡涂成琥珀（状态色要与那张卡自己的档对得上） */
+    var wc = wr, wcv = wv;
+    if (C.n && C.n.red && C.n.oom && C.ratio) { wc = null; wcv = -1; for (var i9 = 0; i9 < C.ratio.length; i9++) { var v9 = C.ratio[i9]; if (v9 != null && v9 >= C.red && !(oomSet && oomSet[i9]) && v9 > wcv) { wc = i9; wcv = v9; } } if (wc == null) { wc = wr; wcv = wv; } }
+    if (C.n && C.n.red) out.push({ sev: 'warn', t: 'Critical 88% · ' + C.n.red + ' ranks', w: 'rank ' + wc + ' · ' + pct(wcv), go: goRank(wc) });
     if (MODE === 'infer' && B.infer && B.infer.bmax < B.infer.batch) {
       var sp9 = 0; B.infer.stages.forEach(function (x, i) { if (x.bmax < B.infer.stages[sp9].bmax) sp9 = i; });
       out.push({ sev: 'crit', t: 'KV Cache overflow · Max Batch ' + B.infer.bmax + ' < ' + B.infer.batch, w: 'PP' + sp9, go: goSeg(sp9) });
@@ -3056,7 +3259,7 @@
       var ov = stageImb(M, H).filter(function (x) { return x.v > H.thrImb; }).sort(function (a, b) { return b.v - a.v; });
       // 一条汇总：Peak · 越线段数；「在哪」列出全部越线段（画布上哪一段标了琥珀，这里都能找到）
       if (ov.length) out.push({ sev: 'warn', t: 'Routing Imbalance ' + ov[0].v.toFixed(2) + '× > ' + H.thrImb + (ov.length > 1 ? ' · ' + ov.length + ' stages' : ''),
-        w: ov.map(function (x) { return 'PP' + x.pp; }).join(' · '), go: goSeg(ov[0].pp) });
+        w: ov.map(function (x) { return 'PP' + x.pp; }).join(' · '), go: goSeg(ov[0].pp, ov.map(function (x) { return x.pp; })) });   // 列出的越线段一起上琥珀，聚焦落在最高那段
     }
     if (MODE === 'train' && B.bubble > 0.25) out.push({ sev: 'warn', t: 'Bubble ' + pct(B.bubble) + ' > 25%', w: 'PP ' + PS.pp + ' · GA ' + (C.model ? C.model.ga : '—'), go: function () { if (drawerOpen !== 'swimlane') openDrawer('swimlane'); } });
     if (wr != null && !(C.n && (C.n.oom || C.n.red))) out.push({ sev: 'info', t: 'Peak Usage ' + pct(wv), w: 'rank ' + wr, go: goRank(wr) });
@@ -3069,15 +3272,19 @@
   }
   var SEV_RANK = { crit: 0, warn: 1, info: 2, past: 3 };
   function renderJourney() {
-    var goals = GOALS[MODE] || [], AL = computeAlerts().sort(function (a, b) { return SEV_RANK[a.sev] - SEV_RANK[b.sev]; }), live = AL.filter(function (x) { return x.sev === 'crit' || x.sev === 'warn'; }).length;
+    var AL = computeAlerts().sort(function (a, b) { return SEV_RANK[a.sev] - SEV_RANK[b.sev]; }), live = AL.filter(function (x) { return x.sev === 'crit' || x.sev === 'warn'; }).length;
+    if (alertKey) {   // 数据变了清单重排：按身份找回点中的那条；没了就连状态色一起撤（延后一拍，renderJourney 也会从选中那一遍里被调到）
+      alertAt = -1; for (var k9 = 0; k9 < AL.length; k9++) if (alertKeyOf(AL[k9]) === alertKey) { alertAt = k9; break; }
+      if (alertAt < 0) { alertKey = null; if (alertHi) { alertHi = null; setTimeout(physApplySelection, 0); } }
+    }
     var worst = AL.reduce(function (m, x) { return Math.min(m, SEV_RANK[x.sev]); }, 9);
     journey.innerHTML = '<div class="jn-bar"><div class="jn-mode">'
       + [['train', 'Train'], ['infer', 'Inference']].map(function (x) { return '<button type="button" data-jmode="' + x[0] + '"' + (x[0] === MODE ? ' class="is-on"' : '') + '>' + x[1] + '</button>'; }).join('')
-      + '</div><div class="jn-goals">' + goals.map(function (x) {
+      + '</div><div class="jn-goals">' + (GOALS[MODE] || []).map(function (x) {
         var badge = x.k === 'alert' && live ? '<i class="jn-badge' + (worst === 0 ? ' is-crit' : '') + '">' + live + '</i>' : '';
-        return '<button type="button" data-stage="' + x.k + '" class="' + (STAGE === x ? 'is-cur' : '') + (x.k === 'alert' ? ' jn-alert' : '') + '"' + (x.q ? ' title="' + esc(x.q) + '"' : '') + '>' + x.n + badge + '</button>';
+        return '<button type="button" data-stage="' + x.k + '" class="' + (STAGE === x ? 'is-cur' : '') + (x.k === 'alert' ? ' jn-alert' : '') + '"' + (x.k === 'alert' ? ' aria-expanded="' + !!(STAGE === x && alertOpen) + '"' : '') + (x.q ? ' title="' + esc(x.q) + '"' : '') + '>' + x.n + badge + '</button>';
       }).join('') + '</div></div>'
-      + (STAGE && STAGE.k === 'alert'
+      + (STAGE && STAGE.k === 'alert' && alertOpen
         ? '<div class="jn-alerts">' + (AL.length ? AL.map(function (x, i) {
             /* 两类不是一回事（反馈「live 当前配置和真实事故的关系是什么？不是同样的就用简洁的名词概括」）：
                当前告警 = 按当前配置实时算出来的风险；历史事故 = 另一次 2048 NPU 训练里真实发生过的事故，是同类告警一路恶化下去的样子 */
@@ -3089,10 +3296,11 @@
             }
             return head + '<button type="button" class="jn-al is-' + x.sev + (i === alertAt ? ' is-on' : '') + '" data-alert="' + i + '"><i></i><b>' + esc(x.t) + '</b><span>' + esc(x.w) + '</span></button>';   // 10.16：行尾不再写「定位」（动词），整行可点
           }).join('') : '<div class="jn-none">没有告警</div>') + '</div>'
-        : '');   // 场景下面那行问句不再出（反馈「不要胶囊下面那段话」），问句只留在场景按钮的悬停提示里
+        : '');
     journey._alerts = AL;
     journey.classList.toggle('is-hidden', world <= 64);
   }
+  /* 换了状态色高亮的对象（或撤掉）：重写一遍格子 class，平面图 / 板视图 / 2.5D·3D 一起跟（hwSync 在 physApplySelection 末尾） */
   function stageGo(st) {
     if (stageObj) { stageObj = false; OBJ = { dim: null, idx: 0 }; setQS('obj', ''); physApplySelection(); }
     if (!st) return;
@@ -3109,18 +3317,22 @@
     if (g === 'cfg') toggleCfg(true);
     renderCfg();
   }
+  /* 换场景（10.29：永远停在一个场景上，没有「全部」）：再点当前那个不撤——「故障定位」再点 = 展开 / 收起告警清单；
+     切到别的场景撤掉上一条告警的定位高亮（换了一件事） */
   function setStage(k) {
-    var st = k ? stageOf(k) : null;
-    if (st && st === STAGE) st = null;   // 再点一次当前那个目的 = 回到全部
-    STAGE = st; alertAt = -1; setQS('goal', st ? st.k : '');
+    var st = stageOf(k); if (!st) return;
+    if (st === STAGE) { if (st.k === 'alert') { alertOpen = !alertOpen; renderJourney(); } return; }
+    STAGE = st; alertOpen = st.k === 'alert'; setQS('goal', st.k === 'alert' ? '' : st.k);
+    alertAt = -1; alertKey = null; setAlertHi(null);
     stageGo(st);
     renderDataCards(); renderJourney();
   }
+  function setAlertHi(h) { var was = alertHi; alertHi = h; if (was || h) physApplySelection(); }
   function setMode(m) {
-    MODE = m === 'infer' ? 'infer' : 'train'; setQS('mode', MODE === 'infer' ? 'infer' : '');
-    // 换工况时尽量停在同名的那个目的（定位告警 / 容量 / 比改动两边都有），没有就回到全部
-    if (STAGE) { STAGE = stageOf(STAGE.k); setQS('goal', STAGE ? STAGE.k : ''); }
-    alertAt = -1;
+    MODE = m === 'infer' ? 'infer' : 'train'; setQS('mode', MODE === 'infer' ? 'infer' : ''); lastPipeDt = null;
+    // 换工况时尽量停在同名的那个场景（故障定位 / 规划 / 调优 / 评估两边都有），没有（设备映射）就回到故障定位
+    STAGE = stageOf(STAGE ? STAGE.k : '') || stageOf('alert'); setQS('goal', STAGE.k === 'alert' ? '' : STAGE.k);
+    alertAt = -1; alertKey = null; setAlertHi(null);   // 两种工况的告警清单不同：换工况撤掉上一条的定位高亮
     if (rawBrief && rawBrief.ok !== false) renderClusterBadge(rawBrief);
     if (curSel != null) rerenderRank();
     if (drawerOpen === 'swimlane') renderSwim();
@@ -3130,21 +3342,36 @@
     var dr = ev.target.closest('[data-act="ip-drill"]'); if (dr) { incidentDrill(parseInt(dr.getAttribute('data-rank'), 10)); return; }
     var pm = ev.target.closest('[data-pm]'); if (pm) { var id9 = pm.getAttribute('data-pm'); incidentOpen[id9] = !incidentOpen[id9]; renderJourney(); return; }
     var a = ev.target.closest('[data-alert]');
-    if (a) { var i9 = +a.getAttribute('data-alert'), x9 = journey._alerts && journey._alerts[i9]; if (x9 && x9.go) { alertAt = i9; x9.go(); renderJourney(); } return; }
+    if (a) {
+      var i9 = +a.getAttribute('data-alert'), x9 = journey._alerts && journey._alerts[i9];
+      if (x9 && x9.go) {
+        // 只有超容红 / 告警琥珀上色，参考读数（info）照常选中、不上色
+        /* 先挂上这条的状态色再定位：定位本身那一遍选中就把颜色画上（不再定位一遍、上色再一遍）；定位途中的中间几遍不判失效。
+           点完收起清单（反馈「这里点击告警的高亮不明显」——清单开着会盖住刚亮起来的那张卡 / 那一段的上半截），再点「告警」重新展开 */
+        var h9 = x9.go.hi && (x9.sev === 'crit' || x9.sev === 'warn') ? { sev: x9.sev, rank: x9.go.hi.rank, pp: x9.go.hi.pp, pps: x9.go.hi.pps } : null;
+        var had = !!alertHi; alertAt = i9; alertKey = alertKeyOf(x9); alertHi = h9; alertOpen = false; alertGoing = true;
+        try { x9.go(); } finally { alertGoing = false; }
+        if (had && !h9) physApplySelection();
+        renderJourney();
+      }
+      return;
+    }
     var b = ev.target.closest('[data-stage]'); if (b) { setStage(b.getAttribute('data-stage')); return; }
     var m = ev.target.closest('[data-jmode]'); if (m && m.getAttribute('data-jmode') !== MODE) setMode(m.getAttribute('data-jmode'));
   });
   var DC_TAG = { calc: 'Calc', asm: 'Est.', demo: 'Demo', pub: 'Public' };
   function dcRow(k, v, cls, tip) { return '<div class="dc-r' + (cls ? ' ' + cls : '') + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '><span>' + k + '</span><b>' + v + '</b></div>'; }
   function dcBar(frac, cls) { return '<i class="dc-bar' + (cls ? ' ' + cls : '') + '"><i style="width:' + Math.max(0, Math.min(100, frac * 100)).toFixed(1) + '%"></i></i>'; }
-  /* 10.21 简略卡（反馈「可以显示简略卡片然后点击再出现详情」）：有头部读数（big）或摘要行（opt.sum）的卡默认只摆
-     卡名 + 读数 + 摘要（越线的那几行），点卡展开图表与明细，点卡头收起；展开与否按卡种记住（浏览器本地，只是个人习惯）。
+  /* 10.21 简略卡（反馈「可以显示简略卡片然后点击再出现详情」）：有头部读数（big）或摘要行（opt.sum）的卡收起时只摆
+     卡名 + 读数 + 摘要（越线的那几行），点卡展开图表与明细，点卡头收起（10.29 起默认展开，见 dcIsOpen）；展开与否按卡种记住（浏览器本地，只是个人习惯）。
      opt.state = 'warn' | 'alert'：越线时读数琥珀 / 红——收起来也看得见告警。opt.bigClosedOnly：读数只在收起时摆（展开后的图里已经有同一个数） */
   var dcFold = (function () { try { return JSON.parse(localStorage.getItem('sdm.dcopen') || '{}') || {}; } catch (e) { return {}; } })();
+  /* 10.29 默认展开（反馈「直接卡片全量显示，可以折叠吧」）：没点过的卡一律摊开，只有读者亲手收起过的（记成 false）才收着 */
+  function dcIsOpen(k) { return dcFold[k] !== false; }
   function dcCard(key, title, body, tag, tip, big, opt) {
     if (!DCK[key] || !stageShows(key)) return '';
     opt = opt || {};
-    var sum = opt.sum || '', fold = !opt.nofold && !!body && (big != null || !!sum || !!opt.fold), open = !fold || !!dcFold[key];
+    var sum = opt.sum || '', fold = !opt.nofold && !!body && (big != null || !!sum || !!opt.fold), open = !fold || dcIsOpen(key);
     return '<section class="dcard' + (fold ? ' is-fold' + (open ? ' is-open' : '') : '') + (opt.state ? ' dc-' + opt.state : '') + '" data-dk="' + key + '"' + (fold ? ' data-fold="' + key + '"' : '')
       + (tip || fold ? ' title="' + esc((tip ? tip : '') + (fold ? (tip ? ' · ' : '') + (open ? '点卡头收起' : '点开看详情') : '')) + '"' : '') + '><div class="dc-h"><span class="dc-t">' + title + '</span>'
       + '</div>'   // 口径小标（Demo / Public / Est.）不上卡面（反馈「不要这几个标记」），口径说明留在整张 NPU 的悬停提示里
@@ -3268,7 +3495,8 @@
   }
   // 以 1× 为共同基线的横条：几项相对提升摆在一起比
   function vzIdx(items, w) {
-    var H = items.length * 16 + 10, pl = 70, pr = 34, pw = w - pl - pr, mx = 2.2, h = '';
+    // 行名栏按最长的名字留宽（10px 等宽 ≈ 6px / 字）：10.17 改成「SuperPoD Affinity」后压进了条里；10.29 卡默认展开，一打开就看得见
+    var H = items.length * 16 + 10, pl = Math.max(70, 8 + 6 * Math.max.apply(null, items.map(function (it) { return it[0].length; }))), pr = 34, pw = w - pl - pr, mx = 2.2, h = '';
     function X(v) { return pl + pw * v / mx; }
     h += '<line class="vz-grid" x1="' + X(1).toFixed(1) + '" x2="' + X(1).toFixed(1) + '" y1="0" y2="' + (H - 10) + '"/><text class="vz-ax" x="' + X(1).toFixed(1) + '" y="' + (H - 1) + '" text-anchor="middle">1×</text>';
     items.forEach(function (it, i) {
@@ -3336,16 +3564,16 @@
     var cta = tier === 3 ? '' : (level !== 'board' ? '<button type="button" class="brief-cta" data-act="board" title="下钻到 Board ' + p.board + '（rank ' + curSel + ' 所在的板）">' + DRILL + 'Board ' + p.board + '</button>' : '')
       + '<button type="button" class="brief-cta is-primary" data-act="drill" title="下钻到 rank ' + curSel + ' 的 NPU 页">' + DRILL + 'NPU</button>';
     /* 10.21 简略卡：收起时只留抬头 + Total（第二档）+ 跳转按钮；点开才摊显存构成与落位 */
-    var open = !!dcFold.rank, cut = head.indexOf('<div class="brief-segbar">');
+    var open = dcIsOpen('rank'), cut = head.indexOf('<div class="brief-segbar">');
     if (!open && cut >= 0) head = head.slice(0, cut);
     return '<section class="dcard lc-rank is-fold' + (open ? ' is-open' : '') + '" data-fold="rank" title="' + (open ? '点卡头收起' : '点开看显存构成与落位') + '"><div class="dc-h lc-rank-h">' + head.replace(/^(<div class="brief-h">[\s\S]*?<\/div>)/, '$1</div>')
-      + (open ? '<div class="brief-k brief-loc" title="落位为假设：rank 连续摆放"><span>SuperPoD ' + p.sp + ' · POD ' + p.pod + '</span><span>Board ' + p.board + ' · Slot ' + p.slot + '<sup>*</sup></span></div>' : '')
+      + (open ? '<div class="brief-k brief-loc" title="落位为假设：rank 连续摆放"><span>SuperPoD ' + p.sp + ' · Rack ' + p.pod + '</span><span>Board ' + p.board + ' · Slot ' + p.slot + '<sup>*</sup></span></div>' : '')
       + (cta ? '<div class="lc-rank-cta">' + cta + '</div>' : '') + '</section>';
   }
   /* 右列的 Group：五个并行组 × 闭合级 × 一次搬多少 + 这颗 NPU 的物理链路（原来是 rank 卡的下半截） */
   function groupCardHtml() {
     if (curSel == null || tier < 2 || (STAGE && !stageShows('comm') && !stageShows('phys'))) return '';
-    var h9 = physInfoHtml(curSel, true), cut9 = h9.indexOf('<div class="brief-links">'), open9 = !!dcFold.group;
+    var h9 = physInfoHtml(curSel, true), cut9 = h9.indexOf('<div class="brief-links">'), open9 = dcIsOpen('group');
     return '<section class="dcard is-fold' + (open9 ? ' is-open' : '') + '" data-dk="group" data-fold="group" title="' + (open9 ? '点卡头收起' : '点开看详情') + '"><div class="dc-h"><span class="dc-t">Group</span></div>'
       + (cut9 < 0 ? h9 : h9.slice(0, cut9) + (open9 ? '<div class="dc-open">' + h9.slice(cut9) + '</div>' : '')) + '</section>';
   }
@@ -3366,8 +3594,8 @@
     }
     if (curSel == null && fitPod != null) {
       var p0 = fitPod * PHYS.pod, sp = rangeStats(p0, p0 + PHYS.pod);
-      return dcCard('cap', 'POD ' + fitPod, sp ? dcRow('Mean', pct(sp.avg)) + dcRow('OOM', sp.over, sp.over ? 'is-bad' : '') : dcRow('Reading', '…'), 'calc', null, sp ? pct(sp.peak) + '<small>Peak</small>' : null,
-        { sum: sp && sp.over && !dcFold.cap ? dcRow('OOM', sp.over, 'is-bad') : '', state: sp && sp.over ? 'alert' : '' }) + ppH;
+      return dcCard('cap', 'Rack ' + fitPod, sp ? dcRow('Mean', pct(sp.avg)) + dcRow('OOM', sp.over, sp.over ? 'is-bad' : '') : dcRow('Reading', '…'), 'calc', null, sp ? pct(sp.peak) + '<small>Peak</small>' : null,
+        { sum: sp && sp.over && !dcIsOpen('cap') ? dcRow('OOM', sp.over, 'is-bad') : '', state: sp && sp.over ? 'alert' : '' }) + ppH;
     }
     if (!C) return ppH;
     var n = C.n, W = C.world, rows = [['OK', n.ok, ''], ['Warn', n.amber, ''], ['Critical', n.red, n.red ? 'is-warn' : ''], ['OOM', n.oom, n.oom ? 'is-bad' : '']];   // 阈值（70 / 88%）进悬停释义，行名不带百分比——长的「Critical 88%」挤进条里
@@ -3395,7 +3623,7 @@
     return dcCard('cap', 'Capacity', rows.map(rowH).join('')
       + (C.worst != null ? dcRow('Peak rank', '<button type="button" class="dc-link" data-dact="sel" data-r="' + C.worst + '">rank ' + C.worst + '</button>') : ''), 'calc', null,
       C.worst != null ? pct(C.ratio[C.worst]) + '<small>Peak Usage</small>' : null,
-      { sum: dcFold.cap ? '' : hot.map(rowH).join(''), state: n.oom ? 'alert' : n.red ? 'warn' : '' });
+      { sum: dcIsOpen('cap') ? '' : hot.map(rowH).join(''), state: n.oom ? 'alert' : n.red ? 'warn' : '' });
   }
   /* 右列：关系（Comm / 闭合 / 板载）→ 时间（流水 → 步时）。选中了 rank 但 rank 卡还收着时，右列保持这一层原来那几张，
      不先冒出一张孤零零的「流水」；rank 卡打开后才换成这张 NPU 自己的流水，排在 rank 卡下面。 */
@@ -3447,13 +3675,22 @@
   }
   /* 右列（10.20）：带阈值的信号在上（Training Health → MoE，越线时琥珀）→ 依据（Pipeline → Comm / Group → On-board）。
      头部读数（Throughput / Step Time / Inference）与 Reference 挪到左列 */
+  var lastPipeDt = null;   // 换工况 / 换 ZeRO 作废（setMode / setZero）
+  function pipeCardCluster(C) {
+    return dcCard('pipe', 'Pipeline', vzMeter(C.bubble, 0.25, '气泡 ' + pct(C.bubble) + '；刻度 = 25% 告警线') + dcRow('PP · GA', PS.pp + ' · ' + C.model.ga) + dcRow('Layers / Stage', C.model.lps) + dcRow('μb', C.model.mbs + '×' + C.model.seq),
+      'calc', '(PP−1)/GA；>25% 告警，GA<PP 灌不满', pct(C.bubble) + '<small>Bubble</small>', { state: C.bubble > 0.25 ? 'warn' : '' });
+  }
   function levelCards() {
     var C = lastCluster, out = [];
     if (tier === 3) return out;
     if (curSel != null && tier === 2) {
       var B = lastBrief && lastBrief.rank === curSel ? lastBrief : null, Dt = B && B.detail;
       if (Dt && Dt.perf) { var sc9 = 'L' + Dt.perf.health.l0 + '–L' + Dt.perf.health.l1; out.push(healthCard(Dt.perf, sc9)); out.push(moeCard(Dt.perf, sc9)); }
-      if (Dt) out.push(pipeCardRank(Dt, false));
+      /* 这张卡的读数还没回来（刚换了选中）：先摆集群那一份顶着，卡片个数不变，回来再原地换成本段的——原来这几百毫秒里
+         Training Health / MoE / Pipeline 整张消失又出现，右列一跳一跳（10.29 卡片默认展开后，每次换选中都会看到） */
+      else if (!B && C && C.perf) { if (MODE === 'train') out.push(healthCard(C.perf)); out.push(moeCard(C.perf)); }
+      /* Pipeline 的数（气泡、PP · GA、ZeRO）全集群同一份：读数没到时先摆上一张卡的那一份（推理也一样），没有才用集群那份 */
+      if (Dt) { lastPipeDt = Dt; out.push(pipeCardRank(Dt, false)); } else if (!B && lastPipeDt) out.push(pipeCardRank(lastPipeDt, false)); else if (!B && C && C.model && MODE !== 'infer') out.push(pipeCardCluster(C));
       out.push(groupCardHtml());
       if (level === 'board' && curBoard != null) out.push(onBoardCard());
       return out;
@@ -3461,14 +3698,13 @@
     if (level === 'board' && curBoard != null) { out.push(onBoardCard()); return out; }
     if (curSel == null && fitPod != null) {
       var dd = hierDims();
-      out.push(dcCard('comm', 'Closure', (dd[0].length ? dcRow('Board', dd[0].join(' ')) : '') + (dd[1].length ? dcRow('POD', dd[1].join(' ')) : '') + dcRow('Beyond POD', (dd[2].concat(dd[3])).join(' ') || '—'), 'asm'));
+      out.push(dcCard('comm', 'Closure', (dd[0].length ? dcRow('Board', dd[0].join(' ')) : '') + (dd[1].length ? dcRow('Rack', dd[1].join(' ')) : '') + dcRow('Beyond Rack', (dd[2].concat(dd[3])).join(' ') || '—'), 'asm'));
       return out;
     }
     if (!C) return out;
     if (C.perf && MODE === 'train') out.push(healthCard(C.perf));
     if (C.perf) out.push(moeCard(C.perf));
-    if (C.model && MODE !== 'infer') out.push(dcCard('pipe', 'Pipeline', vzMeter(C.bubble, 0.25, '气泡 ' + pct(C.bubble) + '；刻度 = 25% 告警线') + dcRow('PP · GA', PS.pp + ' · ' + C.model.ga) + dcRow('Layers / Stage', C.model.lps) + dcRow('μb', C.model.mbs + '×' + C.model.seq),
-      'calc', '(PP−1)/GA；>25% 告警，GA<PP 灌不满', pct(C.bubble) + '<small>Bubble</small>', { state: C.bubble > 0.25 ? 'warn' : '' }));
+    if (C.model && MODE !== 'infer') out.push(pipeCardCluster(C));
     out.push(dcCard('comm', 'Comm', '<div class="dc-open">'
       + (C.comm && C.comm.tp ? dcRow('TP', unitEN(C.comm.tp.txt), '', C.comm.tp.how) : '') + (C.comm && C.comm.pp ? dcRow('PP', unitEN(C.comm.pp.txt), '', C.comm.pp.how) : '') + (C.comm && C.comm.dp && MODE !== 'infer' ? dcRow('DP', unitEN(C.comm.dp.txt), '', C.comm.dp.how) : '')
       + dcRow('UB · RoCE', '196 · 50 GB/s') + '</div>', 'calc', '闭合级别按 rank 连续落位推（假设）；字节按矩阵 commLoad9；CP / EP 各边不等，不给数', null, { sum: closureRows() }));
@@ -3625,8 +3861,15 @@
   function markSelFrame(stage) {
     var svgEl = stage.querySelector('.zp-box svg'); if (!svgEl) return;
     var fr = svgEl.querySelector('.sel-frame'), el = curSel != null ? stage.querySelector('.is-sel') : null;
+    // 10.29 选中那颗的悬停提示写明再点去哪（画布上不挂字，见 placeSelLabel）；换了选中 / 取消选中先还原上一颗
+    var t0 = stage.querySelector('.p-npu > title[data-t0]'); if (t0 && t0.parentNode !== el) { t0.textContent = t0.getAttribute('data-t0'); t0.removeAttribute('data-t0'); }
+    var tt = el && el.querySelector('title');
+    if (tt) { if (!tt.hasAttribute('data-t0')) tt.setAttribute('data-t0', tt.textContent); var s9 = tt.getAttribute('data-t0') + (stage === boardStage || selNear(curSel) ? ' · 再点进 NPU 页' : ' · 再点放大到 Rack'); if (tt.textContent !== s9) tt.textContent = s9; }
     if (!el) { if (fr) fr.remove(); return; }
-    if (!fr) { fr = document.createElementNS('http://www.w3.org/2000/svg', 'rect'); fr.setAttribute('class', 'sel-frame'); }
+    if (!fr) fr = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    // 选中的这张是告警定位的对象：框换成那条告警的状态色（超容红 / 告警琥珀），远看一格也认得出（反馈「这里点击告警的高亮不明显」）
+    // 超容的那张本来就是红的（四周的超容卡也是红）：红框认不出，换成加粗的白框
+    var fc = 'sel-frame' + (el.classList.contains('al-crit') ? (el.classList.contains('c3') ? ' al-thick' : ' al-crit') : el.classList.contains('al-warn') ? ' al-warn' : ''); if (fr.getAttribute('class') !== fc) fr.setAttribute('class', fc);
     isoRoot(svgEl).appendChild(fr);
     /* 框选直接描在图元自己的外边框上（反馈「框选样式直接在图元外边框高亮」）：看得见封装图标时
        （板视图、集群 6× 以上）贴着图标的圆角外框；否则贴着这一格本身。不再留缝、不再另起一个大框。 */
@@ -3670,7 +3913,7 @@
   // ── URL 深链：?sel=<并行拓扑矩阵自己的 rank 编号> 打开时直接进第三档 ─────
   var qsel = parseInt(qs.get('sel'), 10);
   if (isFinite(qsel) && qsel >= 0 && qsel < world) showDetail(qsel);
-  else if (STAGE) stageGo(STAGE);   // ?stage= 深链：落到这一步该看的地方
+  else { if (qs.get('goal') && qs.get('goal') !== STAGE.k) setQS('goal', ''); if (qs.get('goal') === 'alert') { alertOpen = true; renderJourney(); } stageGo(STAGE); }   // ?goal= 深链：落到这个场景该看的地方（故障定位的深链顺手展开告警清单）
 })();
 
 /* ── 英文术语的中文释义（反馈「用英文词的话，hover 要显示中文和对应的含义」）─────────────────────────────
@@ -3711,12 +3954,12 @@
     'Comm Group': '通信组 — 画布上标出同一并行组的 NPU',
     'Comm Links': '通信连线 — NPU 视图里画出与兄弟 rank之间的 Comm',
     'Comm Layers': '通信图层 — 把 Comm 按维叠回图上',
-    'Closure': '闭合 — 这一维 Comm 在哪一级（Board 内 / POD / SuperPoD）就能完成',
-    'Beyond POD': '出 POD — 需要跨 POD 才能完成的维度',
+    'Closure': '闭合 — 这一维 Comm 在哪一级（Board 内 / 机柜 / SuperPoD）就能完成',
+    'Beyond Rack': '出机柜 — 需要跨机柜才能完成的维度',
     'Cross-SuperPoD': '需要走 SuperPoD 之间的网络',
     'SuperPoD': '1024 NPU 组成的一个高速互联域',
     'SP': '序列并行（Sequence Parallel）— norm 这类不改特征维的算子沿 token 切，复用 TP 组',
-    'POD': 'POD — SuperPoD 里的一组 Board',
+    'Rack': '机柜 — 8 块 Board · 64 NPU，SuperPoD 里的一个柜子',
     'On-board': '板载 — Board 内的 CPU / NIC / NPU 配对与连线',
     'Intra-board': '板内 — 同一块 Board 上的 NPU 互联',
     'Off-board': '出板 — Board 上 NPU 连到 L1 交换',
@@ -3774,7 +4017,7 @@
     'Swimlane': '泳道 — 各 PP 段按时间排开的前向 / 反向（推理：prefill / decode）',
     'Network Graph': '模型结构与各层切分',
     'Logical Cube': 'TP × PP × DP 的逻辑排布',
-    'Hierarchy': '层级剖面 — Cluster → SuperPoD → POD → Board → NPU → Die',
+    'Hierarchy': '层级剖面 — Cluster → SuperPoD → Rack（机柜）→ Board → NPU → Die',
     'Layers': '层构成 — 这张 NPU 负责的 Layer 与各 Layer 的构成',
     'Forward': '前向',
     'Backward': '反向',
