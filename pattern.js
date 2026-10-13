@@ -504,6 +504,9 @@
   }
   /* 10.17 术语：SuperPoD 一律 SuperPoD——「SP」在 Network Graph 里是序列并行（Sequence Parallel），同一个缩写不能指两件事 */
   var LINK_LEVELS = ['Board', 'Rack', 'SuperPoD', 'Cross-SuperPoD'];   // 10.29 第二级界面上叫 Rack（机柜，8 块 Board · 64 NPU）：原来写 POD，业内 POD 指更大的一组机柜（反馈「这个是一个板吗还是一个机柜呀」）；代码里的变量仍叫 pod
+  /* 同一套四级闭合的中文名（板内 / Rack / SuperPoD / 跨 SuperPoD），连线悬停与右卡的通信组两处共用：
+     连线写「这条线走哪一级」，NPU 格子写「这颗卡的哪个组走这一级」——两边同一批词，读者才接得上 */
+  var LEVEL_ZH = ['板内', 'Rack', 'SuperPoD', '跨 SuperPoD'];
   /* 8 个平面（直播第一页：L1/L2 按平面成 Clos，平面之间没有互联）只用 P1…P8 的
      标签区分，不按平面着色——黑白规则。PLANE_C 留着做统一灰阶入口。 */
   var PLANE_C = ['#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E'];
@@ -522,6 +525,16 @@
     if (chain) { for (i = 1; i < ranks.length; i++) lv = Math.max(lv, levelBetween(ranks[i - 1], ranks[i])); }
     else { for (i = 1; i < ranks.length; i++) lv = Math.max(lv, levelBetween(ranks[0], ranks[i])); }
     return lv;
+  }
+  /* 这颗 rank 的五个并行组各闭合在哪一级——「rank 层 ↔ 芯片层」那一步的一句话结论，给悬停用：
+     TP 板内 · CP Rack · EP Rack · DP 跨 SuperPoD · PP 跨 SuperPoD。
+     悬停时才现算（一张卡 5 个组、50 来张卡）：写进 4096 个格子的 <desc> 里要多背几百 KB。 */
+  function commLevelLine(r) {
+    var g = commGroups(r), out = [];
+    [['tp', 'TP'], ['cp', 'CP'], ['ep', 'EP'], ['dp', 'DP'], ['pp', 'PP']].forEach(function (x) {
+      var m = g[x[0]]; if (m.length > 1) out.push(x[1] + ' ' + LEVEL_ZH[linkLevel(m, x[0] === 'pp')]);
+    });
+    return out.join(' · ');
   }
 
   /* 一块板（Server 形态：8 NPU + 2 CPU，直播第二页）画成 POD 里的一行：
@@ -826,7 +839,8 @@
               var c = coordOfRank(r);
               nodes.push('<rect class="p-npu" data-rank="' + r + '" data-pp="' + c.pp + '" data-pod="' + podIdx + '"'
                 + ' x="' + (pdx + 22 + n * PITCH + 1) + '" y="' + (ry - 3.5) + '" width="7" height="7">'
-                + '<title>rank ' + r + ' · ' + coordLine(r) + ' · SuperPoD ' + s + ' · Rack ' + podIdx + ' · Board ' + bIdx + ' · Slot ' + n + '</title></rect>');   // 板号写全局号（同面包屑 / rank 卡 / 3D 悬停 / 板行提示；原来写 Rack 内第几块，同一张卡两个 Board 号）
+                + '<title>格子　rank ' + r + ' · ' + coordLine(r) + '\n落位　SuperPoD ' + s + ' · Rack ' + podIdx + ' · Board ' + bIdx + ' · Slot ' + n + ' *'
+                + '\n注记　* 落位为假设：rank 连续摆放（配置里没给 rank → NPU 映射）</title></rect>');   // 板号写全局号（同面包屑 / rank 卡 / 3D 悬停 / 板行提示；原来写 Rack 内第几块，同一张卡两个 Board 号）
               // rank 号 / 封装图标 / 占用条这三件只在放大到 6× 以上才看得见：不在这里一次建 4096×3 个，见 ensurePodDetail
             }
           }
@@ -883,6 +897,7 @@
      SuperPoD 之间的 UBoE 本来就画着。线型与板视图一致。 */
   var relBoard = null;
   function relSvg(b) {
+    LK_HITS = [];   // 这一块的热区单独攒，最后统一铺在线束之上（见 cased 上面的注释）
     var G = GEO.board[b]; if (!G) return '';
     var L1 = GEO.sw1[G.grp] || [], P2 = GEO.sw2[G.sp] || [], out = [], x0 = G.pdx, ry = G.ry, i, k;
     var NX = function (n) { return x0 + 22 + n * PITCH_ + 4.5; }, NT = ry - 3.5, NB = ry + 4.1;   // NB：rank 号下沿（往下的线不穿字）
@@ -959,7 +974,9 @@
     for (k = 0; k < 4; k++) { var nr = NIC(k); ln('rel-roce', nr.x, nr.y - 1.6, nr.x, (L1[0] ? L1[0].top : ry) - 4); }
     ln('rel-roce', DPU + 0.8, ry - 3, DPU + 0.8, (L1[0] ? L1[0].top : ry) - 4);
     out.push('<rect class="rel-row" x="' + (x0 + 2) + '" y="' + (ry - ROWP_ / 2) + '" width="' + (PODW_ - 4) + '" height="' + ROWP_ + '"/>');
-    return '<g class="rel lod1" pointer-events="none">' + out.join('') + '</g>';
+    return '<g class="rel lod1" pointer-events="none">' + out.join('')
+      + (LK_HITS.length ? '<g class="lk-hits">' + LK_HITS.join('') + '</g>' : '')
+      + '</g>';
   }
   function showRelations(b) {
     if (b === relBoard) return;
@@ -968,16 +985,26 @@
     var old = svgEl.querySelector('g.rel'); if (old) old.remove();
     if (b == null) return;
     var tmp = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    tmp.innerHTML = relSvg(b);
+    tmp.innerHTML = svgTips(relSvg(b));   // 同两个舞台：<title> 一律转 <desc>，走自绘提示（原生提示要停一秒、样式随系统）
     // 关系画在设备之上（下面垫一层挖空当前行的暗底，见 relSvg），选中框仍在最上
     var frame = svgEl.querySelector('.sel-frame'), root9 = isoRoot(svgEl);
     root9.insertBefore(tmp.firstChild, frame && frame.parentNode === root9 ? frame : null);
   }
   var relQ = null;
-  physStage.addEventListener('pointerover', function (ev) { relAt(ev.target); });
-  function relAt(target) {
+  physStage.addEventListener('pointerover', function (ev) { relAt(ev.target, ev.clientX, ev.clientY); });
+  function relAt(target, cx, cy) {
     var svgEl = physStage.querySelector('.zp-box svg');
     if (!svgEl || !svgEl.classList.contains('lod1')) return;
+    /* 连线热区（.lk-hit）铺在板行之上：指针压着线时透过它找回底下的板行，
+       不然一碰到线就不再换行（relAt 冻在当前那块上，划出去也换不回来） */
+    if (target.closest('.lk-hit')) {
+      var list = document.elementsFromPoint(cx, cy), t8 = null;
+      for (var j9 = 0; j9 < list.length && !t8; j9++) {
+        if (list[j9].closest && !list[j9].closest('.lk-hit')) t8 = list[j9].closest('.p-npu, .p-board');
+      }
+      if (!t8) return;
+      target = t8;
+    }
     /* 选中了 rank 时展开的就是它所在的那块（见 relSvg 上面「选中了 rank 就是它所在的那块」），指针划过别的行不换：
        换过去那块的让位底（rel-scrim）会把选中那一行整行盖住，白框孤零零浮在底上，看着像错位到了别的卡下面、压着连线
        （反馈截图：POD 取景后选中框不在卡上）。再点选中格放大到 POD 时指针原地不动、底下换成了别的行，浏览器补发的 pointerover 就会触发这一下 */
@@ -1022,14 +1049,27 @@
   /* 画布悬停提示（10.29 调整）：平面图 / 板视图改用跟手的深色小提示，样式与文案同 2.5D / 3D——原来靠 SVG 原生 <title>，要停约 1 秒才出、样式随系统、
      截图里也看不到，「再点放大到 Rack / 再点进 NPU 页」这句关键提示在平面里很难被看到。图上的 <title> 换成 <desc>：读屏照样读得到，浏览器不再弹原生提示 */
   function svgTips(html) { return html.replace(/<(\/?)title>/g, '<$1desc>'); }
+  /* 提示里「标签　内容」的那个标签压暗（三行提示见 LK_TIP）：一条一条读得出来。只包一层 span、连分隔的
+     全角空格一起塞进 span 里，元素的 textContent 与原文一字不差——下面判「内容变了没」还是拿 textContent 比，
+     少了那个空格就会每动一下都判成变了、每帧重写一次 innerHTML */
+  function tipHtml(t) {
+    return t.split('\n').map(function (s) {
+      var m = /^([^　]{1,6})　([\s\S]*)$/.exec(s);
+      return m ? '<span class="ct-k">' + esc(m[1]) + '　</span>' + esc(m[2]) : esc(s);
+    }).join('\n');
+  }
   var cvTip = document.createElement('div'); cvTip.className = 'cv-tip'; document.body.appendChild(cvTip);
   function hideTip() { if (cvTip.style.display !== 'none') cvTip.style.display = 'none'; }
   [physStage, boardStage].forEach(function (stg) {
-    var mv = null;
+    var mv = null, lkHovered = null;   // lkHovered：这一下压住的那条热区，变了才重画高亮
     stg.addEventListener('pointermove', function (ev) {
       if (!mv) requestAnimationFrame(function () {
         var e = mv; mv = null; if (!e) return;
-        if (e.buttons) { hideTip(); return; }   // 拖动平移时不出
+        if (e.buttons) { hideTip(); lkHovered = null; lkHlPaint(stg, null); return; }   // 拖动平移时不出
+        /* 压到哪根线就点亮哪根（热区本身没涂色、看不见，不点亮读者不知道自己停在哪一根上）。
+           只在换了另一根时才重画：paint 会查 DOM，指针在同一根线上滑动不该每帧都查一遍 */
+        var h9 = e.target.closest && e.target.closest('.lk-hit');
+        if (h9 !== lkHovered) { lkHovered = h9; lkHlPaint(stg, h9); }
         // <desc> 在图元自己里面（rect / path）或在它那一组的头尾（板视图的 g）：只看目标与它的父级的头尾两个子元素，不在几千个格子里找
         var d = null;
         for (var t = e.target, i = 0; t && t !== stg && i < 2 && !d; t = t.parentNode, i++) {
@@ -1038,14 +1078,19 @@
         }
         var txt = d ? d.textContent : '';
         if (!txt) { hideTip(); return; }
-        if (cvTip.textContent !== txt) cvTip.textContent = txt;
+        /* NPU 格子再补一句「这个 rank 的哪个组走哪一级」（commLevelLine），换行贴在图元那句话下面：
+           格子上写的是 rank → 坐标 → 落位（假设），这一句把 rank 层接到芯片层——悬停就能读到
+           「四」那一步，不必先点进去看右卡。只在这一下现算，不写进 4096 个格子的 <desc>。 */
+        var np = e.target.closest && e.target.closest('.p-npu'), lv = np && commLevelLine(+np.getAttribute('data-rank'));
+        if (lv) txt += '\n各组　' + lv;
+        if (cvTip.textContent !== txt) cvTip.innerHTML = tipHtml(txt);
         cvTip.classList.toggle('is-flip', e.clientX > window.innerWidth * 0.55);   // 右半屏翻到指针左边（不量宽度），不被视口右沿切掉
         cvTip.style.left = e.clientX + 'px'; cvTip.style.top = e.clientY + 'px'; cvTip.style.display = 'block';
       });
       mv = ev;
     });
-    stg.addEventListener('pointerleave', function () { mv = null; hideTip(); });
-    stg.addEventListener('pointerdown', function () { mv = null; hideTip(); });   // 点完收起：选中 / 取景变了，「再点去哪」等下一次悬停按新状态写（同立体）
+    stg.addEventListener('pointerleave', function () { mv = null; hideTip(); lkHovered = null; lkHlPaint(stg, null); });
+    stg.addEventListener('pointerdown', function () { mv = null; hideTip(); lkHovered = null; lkHlPaint(stg, null); });   // 点完收起：选中 / 取景变了，「再点去哪」等下一次悬停按新状态写（同立体）
   });
   function renderPhys() {
     if (physBuilt) return;
@@ -1209,6 +1254,7 @@
   function markNav() { navAt = performance.now(); }
   function secondOfDbl(ev) { return ev.detail > 1 && performance.now() - navAt < 600; }
   physStage.addEventListener('click', function (ev) {
+    if (ev.target.closest('.lk-hit')) return;   // 点在连线热区上：只是路过，不当「空白」处理（否则一碰线就把选中 / 取景复位）
     var npu = ev.target.closest('.p-npu');
     if (alertOpen && closeAlertList()) return;   // 告警清单开着：第一下只收清单（10.29 调整，同 Esc）
     /* 再点已选中的格：还没放大时 = 放大到它所在的 POD，看得见封装图元（反馈：双击之后跳到单卡那一屏「完全看不清」「这里为什么不放大了」——
@@ -1314,7 +1360,104 @@
     o.forEach(function (t, n) { m[t.key] = cx + (n - (o.length - 1) / 2) * pitch; });
     return m;
   }
-  function cased(el, cc) { return el.replace(/ class="[^"]*"/, ' class="' + (cc || 'lkc') + '"').replace(/ data-[nm]="[^"]*"/g, '').replace(/<title>[\s\S]*?<\/title>/, '') + el; }
+  /* ── 连线悬停提示：一条线三行、每行一个标签（反馈「hover 内容按照一条一条显示，写清楚，现在的看不懂」）——
+       级别　这条线走四级闭合里的哪一级（板内 / Rack / SuperPoD / 跨 SuperPoD）
+       连线　这条线是什么、两端是谁、什么口径
+       承载　谁的流量走它——把 rank 层的「组」和芯片层的「线」缝起来的就是这一句
+     原来一句话把三件事挤在一起（「板内 · 8 卡 UB fullmesh 两两直连（7×X4）」），读者分不出哪半句
+     是级别、哪半句是口径，也就接不上右卡。「级别」那行用 LV_FULL，与右卡通信组的等级、NPU 格子
+     那句 commLevelLine 是同一批词：一边说「这条线走这一级」，另一边说「我的哪个组走这一级」。
+     图上带 <title> 的只有器件，连线一条都没有；而且芯线只有 0.45–0.7px，就算有也停不上去。
+     密线成束的（板内 fullmesh / 出板 Clos / L1→SW2）整束共用一句：共线重叠时命中最上面那根，
+     读到的还是同一句，不会前后不一致；板视图里本来就有精确 <title> 的那几根（NIC↔NPU、H2D、
+     CPU↔CPU、DPU—L1…）文案本来就准，直接当「连线」那一行用——它们的 title 开头也带着级别词
+     （读屏要读，见 buildBoardSvg），拼进悬停之前先按 LV_PRE 摘掉，免得和「级别」那行说两遍。
+     热区是每根线再叠的一条粗描边（.lk-hit，样式见 pattern.css）：热区不紧跟各自那根线，
+     而是收进一个组最后统一铺（见 relSvg / buildBoardSvg 的 .lk-hits）——否则后画的线会把
+     自己的热区盖住，读数跟着画序变。
+     热区也不能带 data-n / data-m：markHot 会按这两个属性标 is-hot，而 .rel .is-hot 是
+     stroke:#FFFFFF !important，11px 的白色描边立刻显形。 */
+  /* 级别的全称（悬停第一行）：括号里那句是「这一级到底多大一圈」，按 rank 连续落位算，
+     与左卡「SuperPoD · Rack · Board」那一行同一个口径 */
+  var LV_FULL = ['板内 — 一块 Board 里（8 颗 NPU，板内 UB fullmesh）',
+    'Rack — 机柜内、跨 Board（8 Board · 64 NPU，出板 Clos）',
+    'SuperPoD — 机柜之间（16 Rack · 1024 NPU，L1 → L2 平面）',
+    '跨 SuperPoD — 出 SuperPoD（UBoE）'];
+  var LV_PRE = /^(板内|Rack|SuperPoD|跨 SuperPoD) · /;   // 器件线 title 开头的级别词：拼进「连线」那行前摘掉
+  function lkTip3(lv, conn, who) { return '级别　' + LV_FULL[lv] + '\n连线　' + String(conn).replace(LV_PRE, '') + '\n承载　' + who; }
+  /* conn 是兜底文案：带 title 的那几根用图元自己的 title（更精确），这里只是表里的默认说法 */
+  var LK_TIP = {
+    /* 板内：fullmesh + 四类器件线 */
+    'rel-mesh': { lv: 0, conn: 'UB fullmesh · 板上 8 颗 NPU 两两直连（每颗 NPU 7×X4）', who: '所有并行组的板内那一段都走它；只在板内闭合的组（如 TP 落在同一块板）全程就是这几根' },
+    'b-mesh': { lv: 0, conn: 'UB fullmesh · 板上 8 颗 NPU 两两直连（每颗 NPU 7×X4）', who: '所有并行组的板内那一段都走它；只在板内闭合的组（如 TP 落在同一块板）全程就是这几根' },
+    'rel-h2d': { lv: 0, conn: 'H2D · CPU0 带 NPU0–3、CPU1 带 NPU4–7（每颗 NPU UB 2 口）', who: '不走并行组：CPU 往它带的那 4 颗 NPU 送数据、收梯度' },
+    'b-h2d': { lv: 0, conn: 'H2D（UB 2 口）', who: '不走并行组：CPU 往它带的那 4 颗 NPU 送数据、收梯度' },
+    'rel-nic': { lv: 0, conn: 'NIC ↔ NPU · NIC k 挂 NPU 2k / 2k+1（每颗 NPU UB 1 口）', who: '不走并行组：NIC 的网口接到它服务的那两颗 NPU' },
+    'b-nicl': { lv: 0, conn: 'NIC ↔ NPU（UB 1 口）', who: '不走并行组：NIC 的网口接到它服务的那两颗 NPU' },
+    'rel-nsw': { lv: 0, conn: 'NIC 交换 · 每颗 CPU 1 口 / 每张 NIC 2 口', who: '不走并行组：本板 NIC 与 CPU 的网口在这个小交换上汇' },
+    'b-nsw-l': { lv: 0, conn: 'NIC / CPU → 本板小交换', who: '不走并行组：本板 NIC 与 CPU 的网口在这个小交换上汇' },
+    'rel-pcie': { lv: 0, conn: 'PCIe 点线 · DPU — CPU0（每板 1 颗 DPU）', who: '不走并行组：DPU 挂在 CPU0 上' },
+    'b-pcie': { lv: 0, conn: 'PCIe · DPU — CPU0', who: '不走并行组：DPU 挂在 CPU0 上' },
+    'rel-cpu': { lv: 0, conn: 'CPU0 ↔ CPU1 互联', who: '不走并行组：一块板里两颗 CPU 之间' },
+    'b-cpul': { lv: 0, conn: 'CPU0 ↔ CPU1 互联', who: '不走并行组：一块板里两颗 CPU 之间' },
+    /* Rack：出板 Clos 与 CPU / DPU 自己的上联 */
+    'rel-clos': { lv: 1, conn: '出板 Clos · 每颗 NPU 8 口 → 本组 8 颗 L1（每平面 1 颗）', who: '需要跨板的并行组都从这里出板：右卡里等级到 Rack 的那几行' },
+    'b-fan': { lv: 1, conn: '出板 Clos · 每颗 NPU 8 口 → 本组 8 颗 L1（每平面 1 颗）', who: '需要跨板的并行组都从这里出板：右卡里等级到 Rack 的那几行' },
+    'rel-ub': { lv: 1, conn: 'UB 实线 · CPU / DPU 上联 L1', who: '不走并行组：CPU / DPU 自己的上联（存储与管理流量也走它）' },
+    'b-ub': { lv: 1, conn: 'UB 实线 · CPU / DPU 上联 L1', who: '不走并行组：CPU / DPU 自己的上联（存储与管理流量也走它）' },
+    'b-ub b-bus': { lv: 1, conn: 'UB 总线 · 本板 CPU / DPU 的上联汇到这一条再出板', who: '不走并行组：同上，本板所有 UB 上联的汇集段' },
+    'rel-inf': { lv: 1, conn: '框内 L2 交换板 · L1 之间互联', who: '不走并行组：交换层内部（L1 之间）的互联' },
+    'b-swbl': { lv: 1, conn: 'L1 → 框内 L2 交换板（每颗 L1 4 口）', who: '不走并行组：L1 往框内交换板的那一路上联' },
+    'b-swbx': { lv: 1, conn: '框内 L2 交换板 → 框内其他板', who: '不走并行组：本框交换板再往框内其他板（配 8 口时可出框）' },
+    /* SuperPoD：机柜之间 */
+    'rel-l12': { lv: 2, conn: 'L1 → 本平面 4×SW2（每颗 L1 4 口，L1/L2 成 Clos）', who: '需要跨 Rack 的并行组：右卡里等级到 SuperPoD 的那几行' },
+    'b-l12': { lv: 2, conn: 'L1 → 本平面 4×SW2（每颗 L1 4 口，L1/L2 成 Clos）', who: '需要跨 Rack 的并行组：右卡里等级到 SuperPoD 的那几行' },
+    'b-ub b-out': { lv: 2, conn: 'L2 → 框间总线（4×X4）', who: '不走并行组：交换板之间的互联，上面那些跨 Rack 的流量走它' },
+    /* 跨 SuperPoD：两张出框的网 */
+    'rel-roce': { lv: 3, conn: 'RoCE 短虚线 · NIC 出框到参数面', who: '不走并行组：参数面出框（与 UBoE 不是同一张网）' },
+    'b-roce': { lv: 3, conn: 'RoCE 短虚线 · NIC 出框到参数面', who: '不走并行组：参数面出框（与 UBoE 不是同一张网）' },
+    'b-roce b-bus': { lv: 3, conn: 'RoCE 参数面总线 · 顶部出框', who: '不走并行组：本板 NIC 的 RoCE 上联汇到这一条' },
+    'b-uboe': { lv: 3, conn: 'UBoE 长虚线 · 出框到 SuperPoD 以上', who: '需要跨 SuperPoD 的并行组：右卡里等级到「跨 SuperPoD」的那几行' }
+  };
+  function lkEntry(cls) {
+    var e = LK_TIP[cls]; if (e) return e;
+    var ks = cls.split(/\s+/);
+    for (var i = 0; i < ks.length; i++) { e = LK_TIP[ks[i]]; if (e) return e; }
+    return null;
+  }
+  var LK_HITS = [];
+  function lkHit(el) {
+    var i9 = el.indexOf('>'); if (el.charAt(0) !== '<' || i9 < 0) return;
+    var head = el.slice(0, i9), tag = (/^<(\w+)/.exec(head) || [])[1], cls = (/ class="([^"]*)"/.exec(head) || [])[1];
+    if (!tag || !cls) return;
+    var t9 = /<title>([\s\S]*?)<\/title>/.exec(el), e9 = lkEntry(cls);
+    /* 表里登记过的按三行写：器件线自己有精确 title 的（NIC↔NPU、H2D…）拿它当「连线」那一行，
+       其余用表里的 conn。表里没登记、只有 title 的（以后新加的线忘了登记）至少把 title 原样给出来，
+       不丢信息，也不会因为没文案就不给热区 */
+    var tip = e9 ? lkTip3(e9.lv, t9 ? t9[1] : e9.conn, e9.who) : (t9 ? t9[1] : null);
+    if (!tip) return;
+    var geo = head.replace(/ class="[^"]*"/, '').replace(/ data-[\w-]+="[^"]*"/g, '').replace(/ style="[^"]*"/g, '').replace(/\s*\/$/, '');
+    LK_HITS.push('<' + tag + ' class="lk-hit"' + geo + '><title>' + esc(tip) + '</title></' + tag + '>');
+  }
+  /* 连线悬停的「点亮」（反馈「hover 线要有 hover 状态」）：每个舞台一个共用元素，指针压住哪根就把哪根的
+     几何抄过来、画成一条白线，离开就清空（d 置空 = 不画）。
+     不直接改那根真线：真线只有 0.45–0.7px 且分密线 / 干线两套宽度，改它还得跟 setZoomStroke 的倍数打架；
+     而 .lk-hits 铺在所有线之上，高亮层放进它最后一个、宽度按屏幕像素定（见 pattern.css 的 .lk-hits .lk-hl），
+     任何缩放下都稳定是「这一根亮起来了」。热区是 11px 走廊、高亮只有 1.1px：密线束里读到哪根就亮哪根，
+     不会整束一起亮。
+     元素是渲染时按需建、不预生成：两个舞台的 .lk-hits 都会被重画（换选中 / 换板），重画后这里再查一次，
+     查不到就补一个——所以只存舞台、不缓存元素引用（缓存了会在重画后指向被删掉的旧节点）。 */
+  function lkHlPaint(stg, hit) {
+    var g = stg.querySelector('.lk-hits'); if (!g) return;
+    var hl = g.querySelector('.lk-hl');
+    if (!hl) { hl = document.createElementNS('http://www.w3.org/2000/svg', 'path'); hl.setAttribute('class', 'lk-hl'); g.appendChild(hl); }
+    var d = !hit ? '' : hit.getAttribute('d') || ('M' + hit.getAttribute('x1') + ' ' + hit.getAttribute('y1') + 'L' + hit.getAttribute('x2') + ' ' + hit.getAttribute('y2'));
+    if (hl.getAttribute('d') !== d) hl.setAttribute('d', d);
+  }
+  function cased(el, cc) {
+    lkHit(el);
+    return el.replace(/ class="[^"]*"/, ' class="' + (cc || 'lkc') + '"').replace(/ data-[nm]="[^"]*"/g, '').replace(/<title>[\s\S]*?<\/title>/, '') + el;
+  }
   function buildBoardSvg(bIdx) {
     var W = 960, H = 590, base = bIdx * PHYS.board, pb = physOf(base);
     var NX = function (i) { return 152 + i * 100; };   // NPU/L1/L2 列中心 = 每颗器件图标的中线
@@ -1343,6 +1486,7 @@
        往右拐的按 k 降序排在右边（最外道 i+1 拐进它们当中最上面那条），本平面那一道居中、直落到 L1——束里的线拐出去互不横穿 */
     var CL = function (i, k) { var o = k <= i ? k : i + (7 - k) + 1; return NX(i) + (o - 3.5) * BP; };
     var bg = [], links = [], nodes = [], txt = [];
+    LK_HITS = [];   // 同 relSvg：热区单独攒，统一铺在线束之上、器件之下（器件的手感优先）
     var BOX_ICON = { 'b-cpu': 'hw-cpu', 'b-dpu': 'hw-dpu', 'b-nic': 'hw-nic', 'b-l1': 'hw-sw', 'b-nsw': 'hw-sw', 'b-swb': 'hw-sw' };
     // 图元在 48×36 viewBox 里实际画到哪（留白不算）：端点贴的是看得见的边
     var ICV = { 'hw-cpu': [2, 1, 46, 35], 'hw-nic': [3, 4, 45, 32], 'hw-dpu': [3, 4, 45, 32], 'hw-sw': [0, 3, 48, 26] };
@@ -1372,11 +1516,11 @@
       // RDMA 端头：NIC 顶上一个空心环（硬件图元库 的 RDMA 端点画法）
       nodes.push('<circle class="b-rdma" cx="' + NC.x + '" cy="' + NC.t + '" r="3.2"/>');
       // NIC 交换（POD 形态图「SW 4*N · 2口/N」）：每张 NIC 2 口汇到右侧那颗小交换的顶边中点
-      links.push(cased('<path class="b-nsw-l" d="' + nswPath(NC.x + 3 * BP, NC.t, NSI.nic[k]) + '"><title>NIC' + k + ' — NIC 交换 · 2 口</title></path>', 'lkc lkd'));
+      links.push(cased('<path class="b-nsw-l" d="' + nswPath(NC.x + 3 * BP, NC.t, NSI.nic[k]) + '"><title>板内 · NIC' + k + ' — NIC 交换（2 口）</title></path>', 'lkc lkd'));
       // NIC 底边两道：左道去 NPU 2k（往左拐）、右道去 NPU 2k+1（往右拐），同一条轨道、方向相反不相叠
       [2 * k, 2 * k + 1].forEach(function (i, s9) {
         var lx = NC.x + (s9 - 0.5) * BP;
-        links.push(cased('<path class="b-nicl" data-n="' + i + '" d="' + rp([[lx, NC.lb], [lx, NFY], [MP.LM[i].n, NFY], [MP.LM[i].n, AT]], RC) + '"><title>NIC' + k + ' — NPU' + i + ' · UB 1 口</title></path>', 'lkc lkd'));
+        links.push(cased('<path class="b-nicl" data-n="' + i + '" d="' + rp([[lx, NC.lb], [lx, NFY], [MP.LM[i].n, NFY], [MP.LM[i].n, AT]], RC) + '"><title>板内 · NIC' + k + ' — NPU' + i + '（UB 1 口）</title></path>', 'lkc lkd'));
       });
     }
     var CPB = [];
@@ -1388,14 +1532,14 @@
       CPB[c] = { lane: lane, yy: yy };
       var H2 = c ? [[0, 0], [1, 1], [2, 2], [3, 1]] : [[2, 2], [3, 3], [4, 1], [5, 0]];   // [车道, 轨道]
       for (var i = 4 * c; i < 4 * c + 4; i++) { var h2 = H2[i - 4 * c], hx = lane(h2[0]), hy = yy(h2[1]);
-        links.push(cased('<path class="b-h2d" data-n="' + i + '" d="' + rp([[hx, A.lb], [hx, hy], [MP.LM[i].h, hy], [MP.LM[i].h, AT]], RC) + '"><title>CPU' + c + ' — NPU' + i + ' · H2D · UB 2 口</title></path>', 'lkc lkd')); }
-      links.push(cased('<path class="b-nsw-l" d="' + nswPath(A.x, A.t, NSI.cpu[c]) + '"><title>CPU' + c + ' — NIC 交换 · 1 口</title></path>', 'lkc lkd'));
+        links.push(cased('<path class="b-h2d" data-n="' + i + '" d="' + rp([[hx, A.lb], [hx, hy], [MP.LM[i].h, hy], [MP.LM[i].h, AT]], RC) + '"><title>板内 · CPU' + c + ' — NPU' + i + ' · H2D（UB 2 口）</title></path>', 'lkc lkd')); }
+      links.push(cased('<path class="b-nsw-l" d="' + nswPath(A.x, A.t, NSI.cpu[c]) + '"><title>板内 · CPU' + c + ' — NIC 交换（1 口）</title></path>', 'lkc lkd'));
       return A;
     });
     txt.push('<text class="b-lbl" x="' + SW.x + '" y="' + (CPUY + 50) + '" text-anchor="middle">1口/C · 2口/N</text>');
     // CPU0 右边中点 ↔ CPU1 左边中点：直角绕上去，从 NIC1 / NIC2 头顶越过
     var CCY = 32;
-    links.push(cased('<path class="b-cpul" d="' + rp([[CP[0].r, CP[0].m], [CP[0].r + 12, CP[0].m], [CP[0].r + 12, CCY], [CP[1].l - 12, CCY], [CP[1].l - 12, CP[1].m], [CP[1].l, CP[1].m]], RC) + '"><title>CPU0 — CPU1 互联</title></path>'));
+    links.push(cased('<path class="b-cpul" d="' + rp([[CP[0].r, CP[0].m], [CP[0].r + 12, CP[0].m], [CP[0].r + 12, CCY], [CP[1].l - 12, CCY], [CP[1].l - 12, CP[1].m], [CP[1].l, CP[1].m]], RC) + '"><title>板内 · CPU0 — CPU1 互联</title></path>'));
     txt.push('<text class="b-lbl" x="' + ((CP[0].x + CP[1].x) / 2) + '" y="' + (CCY + 3) + '" text-anchor="middle">CPU↔CPU</text>');   // 骑在横段上
     // L1 行（每平面一颗）：先定位置，左右两根 UB 干线要接它们的侧边中点
     var L1A = [];
@@ -1409,18 +1553,18 @@
     /* DPU 底边两道（UB 在左往左拐、PCIe 在右往右拐）；CPU0 束最左两道是 PCIe、UB。DPU 与 CPU0 的 UB 各走各的：
        DPU 在外（x=20、从下面进 P1），CPU0 在里（x=20+BP、从上面进 P1），不再在半路并成一根 */
     var C0 = CPB[0], PCY = C0.yy(0);
-    links.push(cased('<path class="b-pcie" d="' + rp([[DP.x + BP / 2, DP.lb], [DP.x + BP / 2, PCY], [C0.lane(0), PCY], [C0.lane(0), CP[0].lb]], RC) + '"><title>DPU — CPU0 · PCIe</title></path>'));
+    links.push(cased('<path class="b-pcie" d="' + rp([[DP.x + BP / 2, DP.lb], [DP.x + BP / 2, PCY], [C0.lane(0), PCY], [C0.lane(0), CP[0].lb]], RC) + '"><title>板内 · DPU — CPU0 · PCIe</title></path>'));
     txt.push('<text class="b-lbl" x="' + (DP.x + 42) + '" y="' + (PCY - 3) + '" text-anchor="middle">PCIe</text>');
-    links.push(cased('<path class="b-ub" d="' + rp([[DP.x - BP / 2, DP.lb], [DP.x - BP / 2, PCY], [20, PCY], [20, L1A[0].m + BP / 2], [L1A[0].l, L1A[0].m + BP / 2]], RC) + '"><title>DPU — L1 · UB</title></path>'));
-    links.push(cased('<path class="b-ub" d="' + rp([[C0.lane(1), CP[0].lb], [C0.lane(1), C0.yy(1)], [20 + BP, C0.yy(1)], [20 + BP, L1A[0].m - BP / 2], [L1A[0].l, L1A[0].m - BP / 2]], RC) + '"><title>CPU0 — L1 · UB</title></path>'));
+    links.push(cased('<path class="b-ub" d="' + rp([[DP.x - BP / 2, DP.lb], [DP.x - BP / 2, PCY], [20, PCY], [20, L1A[0].m + BP / 2], [L1A[0].l, L1A[0].m + BP / 2]], RC) + '"><title>Rack · DPU — L1 · UB</title></path>'));
+    links.push(cased('<path class="b-ub" d="' + rp([[C0.lane(1), CP[0].lb], [C0.lane(1), C0.yy(1)], [20 + BP, C0.yy(1)], [20 + BP, L1A[0].m - BP / 2], [L1A[0].l, L1A[0].m - BP / 2]], RC) + '"><title>Rack · CPU0 — L1 · UB</title></path>'));
     var C1 = CPB[1];
-    links.push(cased('<path class="b-ub" d="' + rp([[C1.lane(4), CP[1].lb], [C1.lane(4), C1.yy(0)], [940, C1.yy(0)], [940, L1A[7].m], [L1A[7].r, L1A[7].m]], RC) + '"><title>CPU1 — L1 · UB</title></path>'));
+    links.push(cased('<path class="b-ub" d="' + rp([[C1.lane(4), CP[1].lb], [C1.lane(4), C1.yy(0)], [940, C1.yy(0)], [940, L1A[7].m], [L1A[7].r, L1A[7].m]], RC) + '"><title>Rack · CPU1 — L1 · UB</title></path>'));
     txt.push('<text class="b-lbl" x="14" y="' + ((CPUY + L1Y) / 2) + '" text-anchor="middle" transform="rotate(-90 14 ' + ((CPUY + L1Y) / 2) + ')">UB → L1</text>');
     txt.push('<text class="b-lbl" x="946" y="' + ((CPUY + L1Y) / 2) + '" text-anchor="middle" transform="rotate(90 946 ' + ((CPUY + L1Y) / 2) + ')">UB → L1</text>');
     // NPU 行 + 板内 fullmesh（弧在行上方）：图标居中，rank 号放在图标下方
     for (var i = 0; i < 8; i++) {
       var r = base + i; if (r >= world) break;
-      nodes.push('<g class="b-npug"><rect class="p-npu p-bnpu" data-rank="' + r + '" data-slot="' + i + '" data-pp="' + coordOfRank(r).pp + '" x="' + (NX(i) - 32) + '" y="' + NPUY + '" width="64" height="' + NPUH + '"><title>NPU' + i + ' · rank ' + r + ' · ' + coordLine(r) + '</title></rect>'
+      nodes.push('<g class="b-npug"><rect class="p-npu p-bnpu" data-rank="' + r + '" data-slot="' + i + '" data-pp="' + coordOfRank(r).pp + '" x="' + (NX(i) - 32) + '" y="' + NPUY + '" width="64" height="' + NPUH + '"><title>格子　NPU' + i + ' · rank ' + r + ' · ' + coordLine(r) + '</title></rect>'
         + '<use class="b-npuicon" href="#hw-npu" x="' + (NX(i) - 18) + '" y="' + (NPUY + 4) + '" width="36" height="27"/>'
         + '<rect class="b-npustrip" x="' + (NX(i) - 14) + '" y="' + (NPUY + 34) + '" width="28" height="3"/>'
         + '<rect class="b-relf" x="' + (NX(i) - 21) + '" y="' + (NPUY + 1) + '" width="42" height="33" rx="7.5"/>'   // 连带选中框：同组成员
@@ -1466,7 +1610,7 @@
       var SB = box('b-swb', sx, SWBY, 76, SWBH, '2×SW', '框内 L2 交换板 ' + (si ? 'B' : 'A') + ' · 2×SW · 每颗 L1 4 口 · 框内 Board 间互联（配 8 口时可出框）');
       for (var k4 = 0; k4 < 8; k4++) { var sl = L1L(k4, si ? 'B' : 'A'), sy9 = swbY(k4, si), sbx = SB.x + (k4 - 3.5) * BP;
         links.push(cased('<path class="b-swbl" d="' + rp([[sl, L1A[k4].lb], [sl, sy9], [sbx, sy9], [sbx, SB.t]], 3) + '"/>', 'lkc lkd')); }
-      links.push(cased('<line class="b-swbx" x1="' + (si ? SB.r : SB.l) + '" y1="' + SB.m + '" x2="' + (si ? 948 : 12) + '" y2="' + SB.m + '"><title>交换板 → 框内其他板</title></line>'));
+      links.push(cased('<line class="b-swbx" x1="' + (si ? SB.r : SB.l) + '" y1="' + SB.m + '" x2="' + (si ? 948 : 12) + '" y2="' + SB.m + '"><title>Rack · 交换板 → 框内其他板</title></line>'));
     });
     txt.push('<text class="b-lbl" x="' + ((NX(3) + NX(4)) / 2) + '" y="' + (SWBY + 14) + '" text-anchor="middle">框内 4口 · 交换板</text>');
     // 底部总线不加衬边：上面落下来的 8 根短线要在它身上汇成一排汇接点，衬边会把接点切掉
@@ -1482,7 +1626,9 @@
     });
     // 选中时把那颗 NPU 的 fullmesh 抬到最上面一组连续轨道（见 liftMesh）：这里记下起点与层距
     return '<svg class="near" data-lift="' + AT + ',' + MY(mTop) + ',' + BP + '" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">' + lkDefs('b-')
-      + '<g class="b-bg">' + bg.join('') + '</g><g class="b-links">' + links.join('') + '</g><g class="b-flow"></g><g class="b-nodes">' + nodes.join('') + '</g><g class="b-txt">' + txt.join('') + '</g></svg>';
+      + '<g class="b-bg">' + bg.join('') + '</g><g class="b-links">' + links.join('') + '</g>'
+      + (LK_HITS.length ? '<g class="lk-hits">' + LK_HITS.join('') + '</g>' : '')
+      + '<g class="b-flow"></g><g class="b-nodes">' + nodes.join('') + '</g><g class="b-txt">' + txt.join('') + '</g></svg>';
   }
   function renderBoard(bIdx) {
     if (boardBuilt === bIdx) return;
@@ -1491,6 +1637,7 @@
     applyAlerts();
   }
   boardStage.addEventListener('click', function (ev) {
+    if (ev.target.closest('.lk-hit')) return;   // 同集群：点连线只当路过，不退板、不撤选中
     var npu = ev.target.closest('.p-npu');
     if (alertOpen && closeAlertList()) return;
     // 板视图本来就是放大后的样子：再点选中的那颗 = 进 NPU 页（10.29，同集群 POD 取景后的再点）

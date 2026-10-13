@@ -236,8 +236,12 @@ body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
 }
 .sel-label span { font-weight: 400; color: #A0A0A0; }
 /* 10.29 调整：平面图 / 板视图的悬停提示，同 2.5D / 3D 引擎里那枚（engine/hw3d.html .tip） */
-.cv-tip { position: fixed; z-index: 30; pointer-events: none; padding: 5px 9px; border-radius: 8px; background: rgba(28, 28, 28, .92); color: #E6E6E6;
-  font: 11px/1.4 var(--mono); white-space: nowrap; transform: translate(12px, 12px); display: none; }
+/* pre-line 而不是 nowrap：提示是「一条一行」的多行结构——连线悬停的三行（级别 / 连线 / 承载）、
+   NPU 格子那几行（格子 / 落位 / 注记 + 各组），nowrap 会把换行吞成空格、几句连成一行读不断。
+   行距放到 1.55：三行挤在 1.4 里读起来还是一团。提示都短，不担心折行 */
+.cv-tip { position: fixed; z-index: 30; pointer-events: none; padding: 6px 10px; border-radius: 8px; background: rgba(28, 28, 28, .92); color: #E6E6E6;
+  font: 11px/1.55 var(--mono); white-space: pre-line; transform: translate(12px, 12px); display: none; }
+.cv-tip .ct-k { color: #7A7A7A; }   /* 每行开头的标签（级别 / 连线 / 承载…）压暗，值提亮：一条一条读得出来 */
 .cv-tip.is-flip { transform: translate(calc(-100% - 12px), 12px); }
 .sel-frame { fill: none; stroke: #FFFFFF; stroke-width: calc(2px / var(--zk, 1)); pointer-events: none; }
 .sel-frame.al-warn { stroke: var(--warn); stroke-width: calc(3px / var(--zk, 1)); }   /* 10.29 选中的这张就是点中的告警对象：框用那条告警的状态色 */
@@ -1477,3 +1481,34 @@ body.is-compact #leftCard > * + .gcard { margin-top: 6px; }
 .dv-menu { position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 2px; padding: 6px;
   background: var(--cam-bg); -webkit-backdrop-filter: var(--cam-fx); backdrop-filter: var(--cam-fx); box-shadow: var(--cam-shadow); border-radius: 18px; z-index: 12; }
 .dock .dv-menu .dv-b { justify-content: flex-start; height: 30px; }
+
+/* ── 连线悬停热区 ──
+   每根线再叠一条粗描边，专门用来接悬停：芯线只有 0.45–0.7px，直接悬停根本碰不到，
+   读者认不出哪条线是哪条（见 pattern.js 的 LK_TIP）。宽度按屏幕像素定：两个画布、任何
+   缩放下都是同一条 11px 走廊，写法与其它描边一样是 calc(px / var(--zk))——先靠
+   .zp-box svg * 的 non-scaling-stroke 抵掉 viewBox，再由 setZoomStroke 除掉 CSS transform 的倍数。
+   （量过：屏幕上只剩 CSS transform 这一个倍数。曾经让 setZoomStroke 连 viewBox 比一起除掉，
+   那是重复除了一次——non-scaling-stroke 抵掉的正是 viewBox 那层——结果同一个 11px 在板视图
+   落到 10.4px、集群落到 14.9px，两个画布不一样宽，还会随窗口大小变。）
+   描边必须画得出来：Chromium 里 pointer-events: stroke 仍要求描边有涂色，stroke: none 的
+   热区一个点都命不中（实测同一根线 stroke:none 时走廊 0px，给上 stroke-opacity: 0 的黑色
+   立刻回来 10.5px）。所以留着一条有色、透明度 0 的描边——看不见，但命中。
+   选择器写成 .lk-hits .lk-hit 而不是单个 .lk-hit：setZoomStroke 会把这条规则重写成
+   「#舞台 .lk-hits .lk-hit」，这个特异性要压得住同样被重写的「#舞台 .rel path」（基准 .7px），
+   否则放大一次热区就跟着缩回发丝线、又碰不到了。光标不给，读者看不出它存在。 */
+.lk-hits .lk-hit {
+  fill: none; stroke: #000000; stroke-opacity: 0; pointer-events: stroke;
+  stroke-width: calc(11px / var(--zk, 1));
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* 悬停的那一根点亮（反馈「hover 线要有 hover 状态」）：每个舞台一个共用元素，几何抄自热区、由
+   pattern.js 的 lkHlPaint 写进 d（空 d = 不画），永远排在 .lk-hits 最后一个——密线束里后画的线
+   压不住它。宽度按屏幕像素定，比最粗的真线（.9px）再厚一档，任何缩放下都是同一道 1.1px 白线。
+   选择器同样写成 .lk-hits .lk-hl：压得住被重写的「#舞台 .rel path」（基准 .7px），不然集群里
+   高亮会瘦回发丝线。pointer-events: none 不能少——它压在其它热区之上，挡了命中就再也停不到
+   下面那几根线上了（.rel 那一层是整组 pointer-events="none"，热区各自写 stroke 才拿回命中）。 */
+.lk-hits .lk-hl {
+  fill: none; stroke: #FFFFFF; pointer-events: none;
+  stroke-width: calc(1.1px / var(--zk, 1));
+  stroke-linecap: round; stroke-linejoin: round;
+}
