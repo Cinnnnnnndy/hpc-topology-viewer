@@ -355,13 +355,26 @@
     if (rh !== lastRcH) { lastRcH = rh; incidentPanel.style.setProperty('--rc-h', rh + 'px'); }
     // 右侧数据卡列接在右卡下面（右卡收起时顶到右卡原位）
     if (typeof shardL !== 'undefined' && shardL) { var t8 = (leftCard.offsetTop || 16) + lh + 8; if (shardL._top !== t8) { shardL._top = t8; shardL.style.top = t8 + 'px'; } }
-    if (typeof dataCol !== 'undefined' && dataCol) { var t9 = (briefCard.offsetTop || 60) + (rh ? rh + 8 : 0); if (dataCol._top !== t9) { dataCol._top = t9; dataCol.style.top = t9 + 'px'; } }
+    if (typeof dataCol !== 'undefined' && dataCol) { var t9 = rh ? briefCard.offsetTop + rh + 8 : window.innerWidth <= 1500 ? 96 : 60; if (dataCol._top !== t9) { dataCol._top = t9; dataCol.style.top = t9 + 'px'; } }
   }
   /* 小屏（笔记本 1280×720 / 1366×768 这一档）：高度不到 840 或宽度不到 1400 就收紧——卡片内边距、行高、卡间距压一档，
      rank 卡五档显存收成一根分段条、四行链路收成一行；大屏不变 */
   function syncCompact() { document.body.classList.toggle('is-compact', window.innerHeight < 840 || window.innerWidth < 1400); }
   syncCompact();
   window.addEventListener('resize', function () { syncCompact(); syncCardHeights(); });
+  // 小屏面板按需展开，两个入口互斥，给主画布留下完整的操作空间。
+  document.querySelectorAll('[data-screen-panel]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var key = button.getAttribute('data-screen-panel');
+      var open = !document.body.classList.contains('screen-' + key);
+      document.body.classList.remove('screen-left', 'screen-right');
+      if (open) document.body.classList.add('screen-' + key);
+      document.querySelectorAll('[data-screen-panel]').forEach(function (b) {
+        b.setAttribute('aria-expanded', String(open && b === button));
+      });
+      syncCardHeights();
+    });
+  });
   incidentPanel && incidentPanel.addEventListener('click', function (ev) {
     var pb = ev.target.closest('[data-prob]');
     if (pb) { var id9 = pb.getAttribute('data-prob'); incidentOpen[id9] = !incidentOpen[id9]; renderIncidentPanel(); return; }
@@ -372,6 +385,7 @@
   renderIncidentPanel();
 
   if (world <= 64) {
+    document.querySelector('.screen-panels').remove();
     /* 规模小：矩阵本体自己一屏就是全部——不铺 Logical Cube、不裁剪它的任何交互，
        与直接打开 /patterns/rank-topology-3d/ 逐字节相同。stitle 换成模型
        名称，跟三档取景那条路用的是同一个名字来源，不是另起一套说法。
@@ -1693,11 +1707,18 @@
   // 系统设置了「减少动态效果」就不飞镜头、不做卡片入场，直接落到终态
   var REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   function safeArea(R) {
-    var bc = document.body.classList, l = 312, r = 312, t = 64, b = 72;
+    var bc = document.body.classList, small = window.innerWidth <= 760;
+    var l = small ? 16 : leftCard.offsetWidth + 40;
+    var r = small ? 16 : (parseFloat(getComputedStyle(document.getElementById('dataCol')).width) || 234) + 40;
+    var t = window.innerWidth <= 1500 ? 100 : 64, b = window.innerWidth <= 520 ? 156 : small ? 116 : 72;
     if (bc.contains('panel-right')) r = drawer.offsetWidth + 40 + (bc.contains('panel-narrow') ? 244 : 0);   // 窄面板旁边还给右列留着一列（见 syncPanelNarrow；卡片是下一帧才摆上的，按「有」留，免得取景压到卡下面）
     if (bc.contains('panel-left')) l = drawer.offsetWidth + 40;
     if (bc.contains('panel-bottom')) b = drawer.offsetHeight + 72;
-    return { x: l, y: t, w: Math.max(200, R.width - l - r), h: Math.max(200, R.height - t - b) };
+    // 打开参考面板后仍把取景区夹在视口内，不能用固定 200px 撑到屏幕外。
+    l = Math.min(l, Math.max(16, R.width - 160));
+    r = Math.min(r, Math.max(16, R.width - l - 120));
+    b = Math.min(b, Math.max(16, R.height - t - 120));
+    return { x: l, y: t, w: Math.max(80, R.width - l - r), h: Math.max(80, R.height - t - b) };
   }
   function attachZoomPan(stage) {
     var st = { k: 1, tx: 0, ty: 0, stage: stage, drag: null, moved: false };
@@ -1903,7 +1924,10 @@
   function panelKey(k) { return 'rtl.panel.' + k + '.' + drawerOpen; }
   function setPanelSize(k, px, noSave) {
     if (k === 'h') px = Math.max(140, Math.min(window.innerHeight - 200, px));
-    else px = Math.max(320, Math.min(window.innerWidth - 480, px));
+    else {
+      var maxWidth = Math.max(120, window.innerWidth - (window.innerWidth <= 760 ? 24 : 480));
+      px = Math.max(Math.min(280, maxWidth), Math.min(maxWidth, px));
+    }
     rootStyle.setProperty(k === 'h' ? '--pb-h' : '--ps-w', px + 'px');
     if (!noSave) try { localStorage.setItem(panelKey(k), String(Math.round(px))); } catch (e) {}
   }
@@ -2009,7 +2033,7 @@
   function fitCrumb() {
     var bar = typeof journey !== 'undefined' && !journey.classList.contains('is-hidden') ? journey.querySelector('.jn-bar') : null;
     crumbEl.classList.remove('cr-tight', 'cr-tight2'); if (!bar) return;
-    var lim = bar.getBoundingClientRect().left - 16, over = function () { var l = crumbEl.lastElementChild; return !!l && l.getBoundingClientRect().right > lim; };
+    var lim = window.innerWidth <= 1500 ? window.innerWidth - 16 : bar.getBoundingClientRect().left - 16, over = function () { var l = crumbEl.lastElementChild; return !!l && l.getBoundingClientRect().right > lim; };
     if (over()) { crumbEl.classList.add('cr-tight'); if (over()) crumbEl.classList.add('cr-tight2'); }
   }
   var fitCrumbQ = false;

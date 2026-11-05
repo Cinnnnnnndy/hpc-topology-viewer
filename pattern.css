@@ -1512,3 +1512,63 @@ body.is-compact #leftCard > * + .gcard { margin-top: 6px; }
   stroke-width: calc(1.1px / var(--zk, 1));
   stroke-linecap: round; stroke-linejoin: round;
 }
+
+/* 屏幕适配：导航保持完整词组；笔记本分两行排标题/导航，小屏面板按需展开。 */
+.jn-mode, .jn-goals { min-width: 0; }
+.jn-mode { flex: none; }
+.jn-mode button, .jn-goals button { flex: none; white-space: nowrap; }
+.journey { max-width: calc(100% - 32px); }
+.jn-bar { min-width: 0; max-width: 100%; }
+.jn-goals { overflow-x: auto; scrollbar-width: thin; }
+.jn-alerts { min-width: 0; width: min(460px, calc(100vw - 32px)); }
+.topbar { max-width: calc(100% - 32px); }
+.crumb { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.crumb > * { flex: none; }
+.cfg-pop { max-width: calc(100vw - 32px); max-height: calc(100dvh - 100px); overflow-y: auto; }
+.screen-panels { display: none; }
+.dcard svg.vz:not(.vz-inline) { max-width: 100%; height: auto; }
+@media (max-width: 1500px) {
+  body.is-compact .journey, body .journey { top: 48px; left: 16px; right: 16px; transform: none; max-width: none; }
+  .jn-bar { width: 100%; justify-content: center; }
+  .jn-mode { margin-right: 0; }
+  body.is-compact .side-left, body .side-left, .side-right, .data-col, .shard-col { top: 96px; }
+  .drawer.at-left, .drawer.at-right { top: 96px; }
+  body.is-compact .ip-col-left, .ip-col-left, body.t3 .ip-col-left { top: calc(96px + var(--lc-h, 300px) + 8px); }
+  .data-col, .shard-col { bottom: calc(76px + var(--pb, 0px)); }
+}
+@media (min-width: 761px) and (max-width: 1100px) {
+  .side-left, .shard-col, .ip-col { width: 230px; }
+  .data-col { width: 214px; }
+  .side-right { width: 204px; }
+  body.panel-right.panel-narrow .data-col:not(.is-hidden) { display: none; }
+}
+@media (max-width: 760px) {
+  body.is-compact .journey, body .journey { left: 10px; right: 10px; }
+  .jn-bar { justify-content: flex-start; gap: 6px; }
+  .jn-mode button { padding: 2px 8px; }
+  .jn-goals button { padding: 2px 9px; }
+  .jn-goals { border-radius: 16px; }
+  .topbar { left: 12px; max-width: calc(100% - 24px); }
+  .crumb { font-size: 12px; gap: 4px; }
+  .crumb .cr-root { font-size: 15px; }
+  .screen-panels { position: fixed; z-index: 8; left: 50%; transform: translateX(-50%); bottom: calc(66px + var(--pb, 0px)); display: flex; gap: 6px; white-space: nowrap; }
+  .screen-panels button { font: inherit; font-size: 12px; padding: 7px 12px; border: 0; border-radius: 999px; background: var(--cam-bg, #222); color: #bdbdbd; cursor: pointer; }
+  .screen-panels button[aria-expanded="true"] { background: #e8e8e8; color: #111; }
+  .side-left, .data-col, .shard-col, .ip-col { display: none !important; }
+  body.screen-left .side-left:not(.is-hidden) { display: block !important; left: 12px; width: min(292px, calc(100% - 24px)); max-height: calc(100dvh - 220px) !important; }
+  body.screen-left.t3 .side-left:not(.is-hidden) { max-height: min(26vh, 170px) !important; }
+  body.screen-left.t3 .shard-col:not(.is-hidden) { display: flex !important; left: 12px; width: min(292px, calc(100% - 24px)); bottom: calc(112px + var(--pb, 0px)); }
+  body.screen-right .data-col:not(.is-hidden) { display: flex !important; right: 2px; width: min(302px, calc(100% - 14px)); bottom: calc(112px + var(--pb, 0px)); }
+  .dock { max-width: calc(100% - 20px); bottom: calc(12px + var(--pb, 0px)); }
+  .dock > *, .dock button { flex-shrink: 0; }
+  .dock .dv-b { padding: 0 8px; min-width: 30px; }
+  .drawer.at-left, .drawer.at-right { max-width: calc(100% - 24px); }
+  .drawer.at-bottom { left: 12px; right: 12px; max-height: calc(100dvh - 180px); }
+  .cfg-pop { left: 12px; right: 12px; width: auto; bottom: calc(112px + var(--pb, 0px)); }
+}
+@media (max-width: 520px) {
+  .dock { width: calc(100% - 20px); flex-wrap: wrap; justify-content: center; }
+  .screen-panels { bottom: calc(106px + var(--pb, 0px)); }
+  body.screen-right .data-col:not(.is-hidden), body.screen-left.t3 .shard-col:not(.is-hidden) { bottom: calc(152px + var(--pb, 0px)); }
+  .cfg-pop { bottom: calc(152px + var(--pb, 0px)); }
+}
