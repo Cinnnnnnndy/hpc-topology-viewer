@@ -1158,9 +1158,9 @@ body.is-compact .lc-big { font-size: 22px; margin-bottom: 6px; }
 .jn-badge { background: var(--cam-bg3); color: #FFFFFF; }
 .jn-badge.is-crit { background: var(--alert); }
 .jn-alerts { border-radius: 20px; }
-/* 工具条：一串圆形按钮，按下的那个图标变黄 */
+/* 工具条共用一层底板，普通按钮透明，悬停和选中时才显示底色。 */
 .dock { border-radius: 999px; padding: 6px; gap: 4px; }
-.dock button { width: 36px; height: 36px; border-radius: 50%; background: var(--cam-bg2); }
+.dock button { width: 36px; height: 36px; border-radius: 50%; background: transparent; }
 .dock button:hover { background: var(--cam-bg3); }
 .dock button.is-on { background: var(--cam-bg3) !important; color: var(--cam-accent) !important; box-shadow: none; }
 .dock button.is-on svg { stroke: var(--cam-accent); }
