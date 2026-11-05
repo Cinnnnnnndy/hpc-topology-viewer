@@ -48,7 +48,7 @@ name: Deploy to GitHub Pages
 #       现在只认 main，避免「推 main」与「推分支」谁最后跑谁赢、线上内容悄悄落后的老问题。
 #   · claude/shard-device-map
 #       → /patterns/shard-device-map/（模型分片与训练设备映射 · 简洁版：独立分支，分支根目录即 pattern 目录，
-#         自带引擎与 vendor，与站内其它页面没有代码关联；启动页不放卡片、旧地址不跳转到它）
+#         自带引擎与 vendor，与站内其它页面没有代码关联；启动页同一卡片提供 Demo 与用户旅程图，旧地址不跳转到它）
 #   · Cinnnnnnndy/pto-design-system @ claude/rank-deck-intersection-payload（跨仓库）
 #       → /parallel-topology/atlas.html（组合总图：哪个问题谁来答；深链带住配置与选中卡）
 #       → /pto-ds/（纠正版 rank-deck + 训练语义 sidecar；Rank 装的是层段×TP片×EP桶的交集）
@@ -825,6 +825,8 @@ jobs:
           node -e "const f='dist/patterns/shard-device-map/pattern.json',j=require('fs');const o=JSON.parse(j.readFileSync(f,'utf8'));o.version=o.version+'+'+'$SHA';j.writeFileSync(f,JSON.stringify(o,null,2)+'\n')"
           test -s dist/patterns/shard-device-map/pattern.html
           test -s dist/patterns/shard-device-map/engine/matrix.html
+          test -s dist/patterns/shard-device-map/journey.html
+          test -s dist/patterns/shard-device-map/journey/cluster.webp
           echo "published: /patterns/shard-device-map/pattern.html (@$SHA)"
 
       - name: Setup Pages
