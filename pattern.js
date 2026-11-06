@@ -355,7 +355,7 @@
     if (rh !== lastRcH) { lastRcH = rh; incidentPanel.style.setProperty('--rc-h', rh + 'px'); }
     // 右侧数据卡列接在右卡下面（右卡收起时顶到右卡原位）
     if (typeof shardL !== 'undefined' && shardL) { var t8 = (leftCard.offsetTop || 16) + lh + 8; if (shardL._top !== t8) { shardL._top = t8; shardL.style.top = t8 + 'px'; } }
-    if (typeof dataCol !== 'undefined' && dataCol) { var t9 = rh ? briefCard.offsetTop + rh + 8 : window.innerWidth <= 1500 ? 96 : 60; if (dataCol._top !== t9) { dataCol._top = t9; dataCol.style.top = t9 + 'px'; } }
+    if (typeof dataCol !== 'undefined' && dataCol) { var t9 = rh ? briefCard.offsetTop + rh + 8 : 60; if (dataCol._top !== t9) { dataCol._top = t9; dataCol.style.top = t9 + 'px'; } }
   }
   /* 小屏（笔记本 1280×720 / 1366×768 这一档）：高度不到 840 或宽度不到 1400 就收紧——卡片内边距、行高、卡间距压一档，
      rank 卡五档显存收成一根分段条、四行链路收成一行；大屏不变 */
@@ -1710,7 +1710,7 @@
     var bc = document.body.classList, small = window.innerWidth <= 760;
     var l = small ? 16 : leftCard.offsetWidth + 40;
     var r = small ? 16 : (parseFloat(getComputedStyle(document.getElementById('dataCol')).width) || 234) + 40;
-    var t = window.innerWidth <= 1500 ? 100 : 64, b = window.innerWidth <= 520 ? 156 : small ? 116 : 72;
+    var t = 64, b = window.innerWidth <= 520 ? 156 : small ? 116 : 72;
     if (bc.contains('panel-right')) r = drawer.offsetWidth + 40 + (bc.contains('panel-narrow') ? 244 : 0);   // 窄面板旁边还给右列留着一列（见 syncPanelNarrow；卡片是下一帧才摆上的，按「有」留，免得取景压到卡下面）
     if (bc.contains('panel-left')) l = drawer.offsetWidth + 40;
     if (bc.contains('panel-bottom')) b = drawer.offsetHeight + 72;
@@ -2033,7 +2033,7 @@
   function fitCrumb() {
     var bar = typeof journey !== 'undefined' && !journey.classList.contains('is-hidden') ? journey.querySelector('.jn-bar') : null;
     crumbEl.classList.remove('cr-tight', 'cr-tight2'); if (!bar) return;
-    var lim = window.innerWidth <= 1500 ? window.innerWidth - 16 : bar.getBoundingClientRect().left - 16, over = function () { var l = crumbEl.lastElementChild; return !!l && l.getBoundingClientRect().right > lim; };
+    var lim = bar.getBoundingClientRect().left - 16, over = function () { var l = crumbEl.lastElementChild; return !!l && l.getBoundingClientRect().right > lim; };
     if (over()) { crumbEl.classList.add('cr-tight'); if (over()) crumbEl.classList.add('cr-tight2'); }
   }
   var fitCrumbQ = false;
@@ -3619,7 +3619,7 @@
   function alertKeyOf(x) { return x.sev + '|' + x.t.split(' ')[0] + '|' + x.w; }   // 「在哪」整段（层号 · 段 / rank）：同一段里两条 Amax 也分得开
   var journey = document.createElement('nav');
   journey.className = 'journey is-hidden'; journey.setAttribute('aria-label', '按场景引导');
-  document.body.appendChild(journey);
+  document.getElementById('screenHeader').appendChild(journey);
   /* 告警清单：每条 {sev: crit|warn|info|past, t: 指标（英文）, w: 在哪, go: 定位} */
   /* 每个 PP 段自己的路由失衡 Peak：{ pp, v, at }（imbL 从 health.l0 那一层起逐层排）——告警清单、板视图连线标签、链路状态共用这一个口径 */
   function stageImb(M, H) {

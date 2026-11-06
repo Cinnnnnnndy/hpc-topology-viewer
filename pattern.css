@@ -1513,7 +1513,7 @@ body.is-compact #leftCard > * + .gcard { margin-top: 6px; }
   stroke-linecap: round; stroke-linejoin: round;
 }
 
-/* 屏幕适配：导航保持完整词组；笔记本分两行排标题/导航，小屏面板按需展开。 */
+/* 屏幕适配：导航保持完整词组；标题与导航保持一行，小屏面板按需展开。 */
 .jn-mode, .jn-goals { min-width: 0; }
 .jn-mode { flex: none; }
 .jn-mode button, .jn-goals button { flex: none; white-space: nowrap; }
@@ -1528,12 +1528,10 @@ body.is-compact #leftCard > * + .gcard { margin-top: 6px; }
 .screen-panels { display: none; }
 .dcard svg.vz:not(.vz-inline) { max-width: 100%; height: auto; }
 @media (max-width: 1500px) {
-  body.is-compact .journey, body .journey { top: 48px; left: 16px; right: 16px; transform: none; max-width: none; }
-  .jn-bar { width: 100%; justify-content: center; }
   .jn-mode { margin-right: 0; }
-  body.is-compact .side-left, body .side-left, .side-right, .data-col, .shard-col { top: 96px; }
-  .drawer.at-left, .drawer.at-right { top: 96px; }
-  body.is-compact .ip-col-left, .ip-col-left, body.t3 .ip-col-left { top: calc(96px + var(--lc-h, 300px) + 8px); }
+  body.is-compact .side-left, body .side-left, .side-right, .data-col, .shard-col { top: 60px; }
+  .drawer.at-left, .drawer.at-right { top: 60px; }
+  body.is-compact .ip-col-left, .ip-col-left, body.t3 .ip-col-left { top: calc(60px + var(--lc-h, 300px) + 8px); }
   .data-col, .shard-col { bottom: calc(76px + var(--pb, 0px)); }
 }
 @media (min-width: 761px) and (max-width: 1100px) {
@@ -1543,7 +1541,6 @@ body.is-compact #leftCard > * + .gcard { margin-top: 6px; }
   body.panel-right.panel-narrow .data-col:not(.is-hidden) { display: none; }
 }
 @media (max-width: 760px) {
-  body.is-compact .journey, body .journey { left: 10px; right: 10px; }
   .jn-bar { justify-content: flex-start; gap: 6px; }
   .jn-mode button { padding: 2px 8px; }
   .jn-goals button { padding: 2px 9px; }
@@ -1571,4 +1568,22 @@ body.is-compact #leftCard > * + .gcard { margin-top: 6px; }
   .screen-panels { bottom: calc(106px + var(--pb, 0px)); }
   body.screen-right .data-col:not(.is-hidden), body.screen-left.t3 .shard-col:not(.is-hidden) { bottom: calc(152px + var(--pb, 0px)); }
   .cfg-pop { bottom: calc(152px + var(--pb, 0px)); }
+}
+
+/* 标题 / 工况 / 场景同一行；只有场景列表在空间不足时横向滚动。 */
+.screen-header { position: fixed; z-index: 8; top: 14px; left: 16px; right: 16px; display: flex; align-items: center; gap: 16px; pointer-events: none; }
+.screen-header .topbar { position: static; flex: 1 1 0; min-width: 110px; max-width: none; pointer-events: auto; }
+.screen-header .topbar.is-hidden { pointer-events: none; }
+.screen-header .crumb { width: 100%; }
+.screen-header .cr-root { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.screen-header .journey { position: static; transform: none; flex: 0 1 auto; min-width: 0; max-width: calc(100% - 126px); }
+.screen-header .jn-bar { width: 100%; justify-content: flex-end; }
+.screen-header .jn-alerts { position: absolute; top: calc(100% + 6px); right: 0; }
+@media (max-width: 1100px) {
+  .screen-header .cr-meta { display: none; }
+}
+@media (max-width: 760px) {
+  .screen-header { left: 12px; right: 12px; gap: 8px; }
+  .screen-header .topbar { min-width: 80px; }
+  .screen-header .journey { max-width: calc(100% - 88px); }
 }
