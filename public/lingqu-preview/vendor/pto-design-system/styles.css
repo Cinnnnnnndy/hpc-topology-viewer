@@ -1,0 +1,8 @@
+/* PTO Design System —— 入口（同上游 styles.css 的 token 链顺序）。
+   来源：https://github.com/yinyucheng0601/pto-design-system （tokens/ + css/style.css 原样快照）
+   注：未引入 tokens/fonts.css（Google Fonts CDN）——字体走 --font-sans/--font-mono 的本地回退链，
+   避免部署页对外部 CDN 的运行时依赖。 */
+@import url('./tokens/foundation.css');
+@import url('./tokens/semantic.css');
+@import url('./tokens/components.css');
+@import url('./css/style.css');
