@@ -1,0 +1,20 @@
+
+/* Solid neutral timeline; reserves space instead of covering the scene. */
+body.has-tour{--tour-height:142px}
+.has-tour .stage-frame{height:calc(100% - var(--tour-height))}
+.has-tour #dock{bottom:calc(18px + var(--pb,0px) + var(--tour-height))}
+.has-tour .data-col,.has-tour .shard-col{bottom:calc(76px + var(--tour-height))}
+.has-tour .side-card{max-height:calc(100vh - 150px - var(--tour-height))}
+.has-tour .drawer.at-left,.has-tour .drawer.at-right,.has-tour .drawer.at-bottom{bottom:calc(16px + var(--tour-height))}
+.has-tour .cfg-pop{bottom:calc(62px + var(--pb,0px) + var(--tour-height));max-height:calc(100vh - 230px)}
+.has-tour .ip-col{bottom:calc(18px + var(--pb,0px) + var(--tour-height))}
+#productTour{position:fixed;inset:auto 0 0;z-index:100;height:var(--tour-height);box-sizing:border-box;background:#111;color:#eee;border-top:1px solid #292929;padding:14px 28px;font:13px/1.5 system-ui,sans-serif}
+#productTour button{color:#aaa;background:none;border:0;cursor:pointer;font:inherit;min-height:44px;flex-shrink:0}
+#productTour button:hover{color:#fff;background:#232323}
+#productTour :focus-visible{outline:2px solid #eee;outline-offset:3px}
+.tour-caption{display:flex;gap:16px;align-items:baseline;min-height:28px}.tour-caption b{white-space:nowrap;font-weight:500}.tour-caption span{color:#aaa;font-size:12px}
+.tour-controls{display:flex;align-items:center;gap:12px}.tour-track{min-width:0;flex:1}.tour-track nav{display:flex;overflow:auto;gap:22px;scrollbar-width:thin;scrollbar-color:#333 transparent}.tour-track nav button{white-space:nowrap;font-size:12px!important}.tour-track nav [aria-current="step"]{color:#fff!important;font-weight:600!important;border-bottom:2px solid #eee!important}
+#productTour .tour-play{background:#262626;border-radius:50%;width:50px;height:50px;display:grid;place-items:center}.tour-play svg{width:22px;height:22px;fill:#eee}
+.tour-track input{appearance:none;display:block;width:100%;height:32px;margin:0;cursor:ew-resize;touch-action:none;user-select:none;background:linear-gradient(to right,#ddd var(--progress,0%),#2b2b2b var(--progress,0%)) center / 100% 6px no-repeat}.tour-track input::-webkit-slider-thumb{appearance:none;width:8px;height:20px;background:#eee;border:0;border-radius:0}.tour-track input::-moz-range-thumb{width:8px;height:20px;background:#eee;border:0;border-radius:0}
+#productTour output{color:#888;font:11px monospace;white-space:nowrap}.tour-prev,.tour-next{font-size:24px!important}
+@media(max-width:700px){body.has-tour{--tour-height:164px}#productTour{padding:12px}.tour-caption{display:block;height:58px}.tour-caption span{display:block;font-size:11px}.tour-controls{gap:6px}#productTour output{display:none}#productTour .tour-play{width:44px;height:44px}.tour-track nav{gap:16px}}
